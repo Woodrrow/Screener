@@ -1,0 +1,17 @@
+# Universe construction and (from phase 2) factor weights.
+
+source:
+  provider: coingecko
+  vs_currency: usd
+  # Free tier is 10-30 calls/min depending on load. 10 is the conservative floor:
+  # slower runs beat a rate-limit ban mid-snapshot.
+  rate_per_minute: 10.0
+  max_retries: 5
+
+universe:
+  top_n: 250
+  min_market_cap_usd: 50000000      # $50m
+  min_volume_24h_usd: 5000000       # $5m
+  min_turnover: 0.01                # 24h volume / market cap
+  extra_stablecoin_symbols: []
+  extra_excluded_coin_ids: []

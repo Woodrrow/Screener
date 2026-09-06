@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.env
+
+# Regenerable and large. The HTTP cache is disposable by definition, and the
+# per-coin history store can be rebuilt from the API at any time.
+data/cache/
+data/history/*.parquet
+
+# Snapshots and portfolio state are deliberately NOT ignored: the dated
+# snapshots ARE the point-in-time record that makes forward results honest,
+# and state.json is the forward track record. Both must be versioned.
