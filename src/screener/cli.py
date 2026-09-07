@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from screener import factors
 from screener import universe as universe_filters
 from screener.config import ScreenConfig, load_screen_config
 from screener.data.coingecko import CoinGeckoClient
@@ -17,6 +18,7 @@ from screener.data.history import HistoryStore
 from screener.data.snapshots import SnapshotStore, WriteStatus
 from screener.data.source import DataSource
 from screener.paths import Layout, default_layout
+from screener.screen import load_price_panel, run_screen, write_ranking_csv
 
 app = typer.Typer(
     help="Crypto factor screener and $1,000 paper-trading simulator.",
@@ -162,6 +164,98 @@ def history(
         f"[green]Done.[/] {added} new daily rows, {skipped} coins already current, "
         f"store at {layout.history}"
     )
+
+
+@app.command("factors")
+def factors_list() -> None:
+    """List every registered factor, its direction and its missing-data policy."""
+    table = Table("factor", "direction", "missing data", "description")
+    for spec in factors.all_specs():
+        table.add_row(spec.name, str(spec.direction), str(spec.na_policy), spec.description)
+    console.print(table)
+
+
+@app.command()
+def screen(
+    config_path: ConfigOption = Path("config/screen.yaml"),
+    data_dir: DataDirOption = Path("data"),
+    preset: Annotated[
+        str | None, typer.Option("--preset", help="Named weight set from screen.yaml.")
+    ] = None,
+    as_of: Annotated[
+        str | None,
+        typer.Option("--as-of", help="Snapshot date (YYYY-MM-DD). Defaults to the newest."),
+    ] = None,
+    top: Annotated[int, typer.Option("--top", help="Rows to print.")] = 20,
+    output: Annotated[
+        Path | None, typer.Option("--output", help="Write the full ranking here as CSV.")
+    ] = None,
+) -> None:
+    """Rank the investable universe of a snapshot by a preset's composite score."""
+    config = load_screen_config(config_path)
+    layout = default_layout(data_dir).ensure()
+    store = SnapshotStore(layout.snapshots)
+
+    if as_of is None:
+        day = store.latest_date()
+        if day is None:
+            console.print("[red]No snapshots yet. Run `screener snapshot` first.[/]")
+            raise typer.Exit(code=1)
+    else:
+        day = date.fromisoformat(as_of)
+        if not store.exists(day):
+            console.print(f"[red]No snapshot for {day}.[/] Available: {store.available_dates()}")
+            raise typer.Exit(code=1)
+
+    snapshot_frame = store.read(day)
+    preset_name, weights = config.weights_for(preset)
+
+    needs_history = any(factors.get(name).needs_history for name in weights)
+    price_panel = None
+    if needs_history:
+        history = HistoryStore(layout.history)
+        price_panel = load_price_panel(history, snapshot_frame["coin_id"].astype(str).tolist(), day)
+        if price_panel.empty:
+            console.print(
+                "[yellow]No price history found.[/] History-backed factors will score every "
+                "coin as the worst case, which is the conservative default but not informative. "
+                "Run `screener history` first."
+            )
+
+    result = run_screen(
+        snapshot_frame,
+        as_of=day,
+        weights=weights,
+        preset=preset_name,
+        universe_config=config.universe,
+        price_panel=price_panel,
+    )
+
+    table = Table(
+        "rank",
+        "coin",
+        "symbol",
+        "score",
+        *[f"pct {name}" for name in sorted(weights)],
+        title=f"{preset_name} @ {day} ({len(result.ranking)} investable)",
+    )
+    for row in result.top(top).itertuples(index=False):
+        table.add_row(
+            str(row.rank),
+            str(row.coin_id),
+            str(row.symbol),
+            f"{row.composite_score:.1f}",
+            *[f"{getattr(row, f'pct_{name}'):.2f}" for name in sorted(weights)],
+        )
+    console.print(table)
+
+    destination = (
+        output
+        if output is not None
+        else (layout.reports_dir / f"screen-{day.isoformat()}-{preset_name}.csv")
+    )
+    write_ranking_csv(result, destination)
+    console.print(f"[green]Wrote[/] {len(result.ranking)} ranked rows to {destination}")
 
 
 @app.command()

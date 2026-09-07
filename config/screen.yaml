@@ -1,4 +1,4 @@
-# Universe construction and (from phase 2) factor weights.
+# Universe construction and factor weights.
 
 source:
   provider: coingecko
@@ -15,3 +15,33 @@ universe:
   min_turnover: 0.01                # 24h volume / market cap
   extra_stablecoin_symbols: []
   extra_excluded_coin_ids: []
+
+default_preset: balanced
+
+# Every weight is positive and each preset sums to 1.0. Penalty factors
+# (volatility, size_tilt) carry their sign in the factor's declared direction,
+# so there is never a negative weight here to get backwards.
+presets:
+  momentum:
+    momentum_7d: 0.20
+    momentum_30d: 0.30
+    momentum_200d: 0.20
+    trend_health: 0.10
+    liquidity: 0.10
+    volatility: 0.10
+
+  value:
+    drawdown_depth: 0.35
+    dilution: 0.20
+    liquidity: 0.15
+    size_tilt: 0.15
+    volatility: 0.15
+
+  balanced:
+    momentum_30d: 0.20
+    momentum_200d: 0.15
+    liquidity: 0.15
+    dilution: 0.15
+    trend_health: 0.10
+    volatility: 0.15
+    size_tilt: 0.10

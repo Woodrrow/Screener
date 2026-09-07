@@ -58,6 +58,15 @@ def cli_env(
         "  min_market_cap_usd: 50000000\n"
         "  min_volume_24h_usd: 5000000\n"
         "  min_turnover: 0.01\n"
+        "default_preset: balanced\n"
+        "presets:\n"
+        "  balanced:\n"
+        "    momentum_30d: 0.5\n"
+        "    liquidity: 0.3\n"
+        "    volatility: 0.2\n"
+        "  value:\n"
+        "    drawdown_depth: 0.6\n"
+        "    dilution: 0.4\n"
     )
     data_dir = tmp_path / "data"
     source = StubSource(universe_frame)
@@ -166,3 +175,70 @@ def test_config_typos_fail_loudly(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "top_end" in str(result.exception) or "top_end" in result.output
+
+
+def test_screen_ranks_and_writes_a_csv(
+    cli_env: tuple[Path, Path, StubSource], tmp_path: Path
+) -> None:
+    config_path, data_dir, _ = cli_env
+    _run(["snapshot", "-c", str(config_path), "--data-dir", str(data_dir)])
+    output = tmp_path / "ranking.csv"
+    result = _run(
+        [
+            "screen",
+            "-c",
+            str(config_path),
+            "--data-dir",
+            str(data_dir),
+            "--preset",
+            "value",
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    header = output.read_text().splitlines()[0].split(",")
+    assert header[:2] == ["rank", "coin_id"]
+    assert "pct_drawdown_depth" in header
+    assert "raw_dilution" in header
+    assert len(output.read_text().splitlines()) == 9  # header plus eight investable coins
+
+
+def test_screen_warns_when_history_is_missing(
+    cli_env: tuple[Path, Path, StubSource],
+) -> None:
+    """The balanced preset uses volatility, which needs the history store."""
+    config_path, data_dir, _ = cli_env
+    _run(["snapshot", "-c", str(config_path), "--data-dir", str(data_dir)])
+    result = _run(["screen", "-c", str(config_path), "--data-dir", str(data_dir)])
+
+    assert result.exit_code == 0, result.output
+    assert "No price history found" in result.output
+
+
+def test_screen_requires_a_snapshot(cli_env: tuple[Path, Path, StubSource]) -> None:
+    config_path, data_dir, _ = cli_env
+    result = _run(["screen", "-c", str(config_path), "--data-dir", str(data_dir)])
+    assert result.exit_code == 1
+    assert "No snapshots yet" in result.output
+
+
+def test_screen_rejects_an_unknown_snapshot_date(
+    cli_env: tuple[Path, Path, StubSource],
+) -> None:
+    config_path, data_dir, _ = cli_env
+    _run(["snapshot", "-c", str(config_path), "--data-dir", str(data_dir)])
+    result = _run(
+        ["screen", "-c", str(config_path), "--data-dir", str(data_dir), "--as-of", "1999-01-01"]
+    )
+    assert result.exit_code == 1
+    assert "No snapshot for 1999-01-01" in result.output
+
+
+def test_factors_command_lists_the_registry() -> None:
+    result = _run(["factors"])
+    assert result.exit_code == 0
+    assert "momentum_30d" in result.output
+    assert "lower_is_better" in result.output

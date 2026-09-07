@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from screener import factors
 
 
 class StrictModel(BaseModel):
@@ -37,9 +39,68 @@ class UniverseConfig(StrictModel):
     extra_excluded_coin_ids: tuple[str, ...] = ()
 
 
+WEIGHT_SUM_TOLERANCE = 1e-9
+
+DEFAULT_PRESETS: dict[str, dict[str, float]] = {
+    "balanced": {
+        "momentum_30d": 0.20,
+        "momentum_200d": 0.15,
+        "liquidity": 0.15,
+        "dilution": 0.15,
+        "trend_health": 0.10,
+        "volatility": 0.15,
+        "size_tilt": 0.10,
+    }
+}
+
+
 class ScreenConfig(StrictModel):
     source: SourceConfig = SourceConfig()
     universe: UniverseConfig = UniverseConfig()
+    presets: dict[str, dict[str, float]] = Field(default_factory=lambda: dict(DEFAULT_PRESETS))
+    default_preset: str = "balanced"
+
+    @field_validator("presets")
+    @classmethod
+    def _validate_presets(cls, presets: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
+        if not presets:
+            raise ValueError("at least one preset must be defined")
+        known = set(factors.available())
+        for name, weights in presets.items():
+            if not weights:
+                raise ValueError(f"preset {name!r} has no weights")
+            unknown = sorted(set(weights) - known)
+            if unknown:
+                raise ValueError(
+                    f"preset {name!r} references unknown factors {unknown}; "
+                    f"known factors are {sorted(known)}"
+                )
+            negative = sorted(key for key, value in weights.items() if value < 0)
+            if negative:
+                # Penalty factors carry their sign in the factor's direction, so
+                # a negative weight here is always a mistake and never a shortcut.
+                raise ValueError(
+                    f"preset {name!r} has negative weights {negative}; express a penalty "
+                    "with a LOWER_IS_BETTER factor, not a negative weight"
+                )
+            total = sum(weights.values())
+            if abs(total - 1.0) > WEIGHT_SUM_TOLERANCE:
+                raise ValueError(f"preset {name!r} weights sum to {total!r}, expected 1.0")
+        return presets
+
+    @model_validator(mode="after")
+    def _validate_default_preset(self) -> ScreenConfig:
+        if self.default_preset not in self.presets:
+            raise ValueError(
+                f"default_preset {self.default_preset!r} is not one of {sorted(self.presets)}"
+            )
+        return self
+
+    def weights_for(self, preset: str | None) -> tuple[str, dict[str, float]]:
+        name = preset or self.default_preset
+        if name not in self.presets:
+            raise KeyError(f"unknown preset {name!r}; defined presets: {sorted(self.presets)}")
+        return name, dict(self.presets[name])
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
