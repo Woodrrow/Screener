@@ -33,6 +33,9 @@ ConfigOption = Annotated[
 DataDirOption = Annotated[
     Path, typer.Option("--data-dir", help="Root of the data store.", show_default=True)
 ]
+ReportsDirOption = Annotated[
+    Path, typer.Option("--reports-dir", help="Where reports and rankings are written.")
+]
 
 
 def _build_source(config: ScreenConfig, layout: Layout) -> DataSource:
@@ -179,6 +182,7 @@ def factors_list() -> None:
 def screen(
     config_path: ConfigOption = Path("config/screen.yaml"),
     data_dir: DataDirOption = Path("data"),
+    reports_dir: ReportsDirOption = Path("reports"),
     preset: Annotated[
         str | None, typer.Option("--preset", help="Named weight set from screen.yaml.")
     ] = None,
@@ -193,7 +197,7 @@ def screen(
 ) -> None:
     """Rank the investable universe of a snapshot by a preset's composite score."""
     config = load_screen_config(config_path)
-    layout = default_layout(data_dir).ensure()
+    layout = default_layout(data_dir, reports_dir).ensure()
     store = SnapshotStore(layout.snapshots)
 
     if as_of is None:
