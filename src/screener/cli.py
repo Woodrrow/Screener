@@ -713,13 +713,15 @@ def papertrade(
     execution_date, execution_snapshot = available[-1], snapshots.read(available[-1])
     signal_date, signal_snapshot = available[-2], snapshots.read(available[-2])
 
+    _, active_weights = config.weights_for(preset)
+    fingerprint = config_fingerprint(portfolio, universe=config.universe, weights=active_weights)
     store = StateStore(layout.portfolio)
-    state = store.load() or PortfolioState.fresh(portfolio)
-    fingerprint = config_fingerprint(portfolio)
+    state = store.load() or PortfolioState.fresh(portfolio, fingerprint)
     if state.config_fingerprint and state.config_fingerprint != fingerprint:
         console.print(
-            "[yellow]Portfolio config has changed since this track record started.[/] "
-            "The curve before and after this point is not one strategy."
+            "[yellow]The strategy has changed since this track record started[/] "
+            "(portfolio rules, universe filters or factor weights). The curve before "
+            "and after this point is not one strategy."
         )
         state.config_fingerprint = fingerprint
 

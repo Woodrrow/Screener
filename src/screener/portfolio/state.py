@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -20,15 +21,35 @@ from typing import Any
 
 import pandas as pd
 
-from screener.config import PortfolioConfig
+from screener.config import PortfolioConfig, UniverseConfig
 from screener.portfolio.costs import CostModel
 from screener.portfolio.ledger import Ledger, Position, TradeRecord
 
 STATE_SCHEMA_VERSION = 1
 
 
-def config_fingerprint(config: PortfolioConfig) -> str:
-    payload = json.dumps(config.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+def config_fingerprint(
+    config: PortfolioConfig,
+    *,
+    universe: UniverseConfig | None = None,
+    weights: Mapping[str, float] | None = None,
+) -> str:
+    """Hash of everything that defines the strategy, not just the sizing rules.
+
+    The universe floors and the factor weights decide what gets bought every bit
+    as much as max_positions does - a market cap floor change can swap the entire
+    book. Hashing only PortfolioConfig would let a screen.yaml edit split a track
+    record in half without anybody being told.
+    """
+    payload = json.dumps(
+        {
+            "portfolio": config.model_dump(mode="json"),
+            "universe": None if universe is None else universe.model_dump(mode="json"),
+            "weights": None if weights is None else dict(sorted(weights.items())),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
@@ -47,11 +68,11 @@ class PortfolioState:
     # ------------------------------------------------------------ conversion
 
     @classmethod
-    def fresh(cls, config: PortfolioConfig) -> PortfolioState:
+    def fresh(cls, config: PortfolioConfig, fingerprint: str = "") -> PortfolioState:
         return cls(
             initial_capital=config.initial_capital,
             cash=config.initial_capital,
-            config_fingerprint=config_fingerprint(config),
+            config_fingerprint=fingerprint or config_fingerprint(config),
         )
 
     def to_ledger(self, costs: CostModel) -> Ledger:

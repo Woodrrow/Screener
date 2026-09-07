@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from screener.config import PortfolioConfig
+from screener.config import PortfolioConfig, UniverseConfig
 from screener.portfolio.costs import CostModel
 from screener.portfolio.ledger import Ledger, Position
 from screener.portfolio.state import (
@@ -83,11 +83,30 @@ def test_fresh_state_starts_with_the_configured_capital() -> None:
     assert state.positions == {}
 
 
-def test_fingerprint_changes_with_the_rules() -> None:
+def test_fingerprint_changes_with_the_portfolio_rules() -> None:
     base = PortfolioConfig()
     changed = PortfolioConfig(exit_rank_threshold=20)
     assert config_fingerprint(base) != config_fingerprint(changed)
     assert config_fingerprint(base) == config_fingerprint(PortfolioConfig())
+
+
+def test_fingerprint_also_covers_the_universe_and_the_weights() -> None:
+    """A market cap floor change swaps the whole book; it must split the record."""
+    portfolio = PortfolioConfig()
+    weights = {"momentum_30d": 0.5, "liquidity": 0.5}
+    wide = UniverseConfig(min_market_cap_usd=50_000_000.0)
+    narrow = UniverseConfig(min_market_cap_usd=1_000_000_000.0)
+
+    base = config_fingerprint(portfolio, universe=wide, weights=weights)
+    assert base != config_fingerprint(portfolio, universe=narrow, weights=weights)
+    assert base != config_fingerprint(
+        portfolio, universe=wide, weights={"momentum_30d": 0.6, "liquidity": 0.4}
+    )
+    assert base == config_fingerprint(
+        portfolio, universe=wide, weights=dict(reversed(list(weights.items())))
+    )
+    # Hashing the portfolio alone must not collide with the full strategy hash.
+    assert base != config_fingerprint(portfolio)
 
 
 def test_ledger_round_trip_preserves_the_book() -> None:

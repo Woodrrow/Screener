@@ -67,3 +67,15 @@ def test_weights_for_falls_back_to_the_default() -> None:
     assert config.weights_for("value")[0] == "value"
     with pytest.raises(KeyError, match="unknown preset"):
         config.weights_for("aggressive")
+
+
+def test_shipped_universe_leaves_room_for_the_screen_to_choose() -> None:
+    """The exit threshold must sit inside the universe, or nothing ever exits on rank.
+
+    A market cap floor high enough to shrink the universe below the exit
+    threshold turns the screen into the benchmark it is meant to be measured
+    against - the failure mode that ruled out a $5b floor.
+    """
+    config = load_screen_config(REPO_CONFIG)
+    assert config.universe.min_market_cap_usd >= 50_000_000
+    assert config.universe.top_n > 15

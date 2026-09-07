@@ -12,7 +12,14 @@ source:
 
 universe:
   top_n: 250
-  min_market_cap_usd: 50000000      # $50m
+  # $1b. Chosen deliberately, not as a default: at a $50m floor this screen
+  # ranked memecoins into the entire top eight, and no reweighting fixed it -
+  # they genuinely score well on momentum, turnover and float. The universe is
+  # the lever, not the weights. $1b leaves ~40 investable coins for an
+  # 8-position book, a 5:1 selection ratio; going much higher collapses the
+  # screen into the equal-weight-top-8 benchmark it is supposed to be measured
+  # against, and would push exit_rank_threshold past the universe size.
+  min_market_cap_usd: 1000000000
   min_volume_24h_usd: 5000000       # $5m
   min_turnover: 0.01                # 24h volume / market cap
   extra_stablecoin_symbols: []

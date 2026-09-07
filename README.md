@@ -171,7 +171,7 @@ setting in the config at this account size.
 | `source.rate_per_minute` | `10.0` | Token-bucket budget. The conservative end of the free tier |
 | `source.max_retries` | `5` | Attempts before the run fails loudly |
 | `universe.top_n` | `250` | Coins pulled per snapshot |
-| `universe.min_market_cap_usd` | `50000000` | Market-cap floor |
+| `universe.min_market_cap_usd` | `1000000000` | Market-cap floor. See the note below |
 | `universe.min_volume_24h_usd` | `5000000` | 24h volume floor |
 | `universe.min_turnover` | `0.01` | Volume ÷ market cap floor |
 | `universe.extra_stablecoin_symbols` | `[]` | Additions to the built-in stablecoin list |
@@ -182,6 +182,17 @@ setting in the config at this account size.
 Filters are applied when a snapshot is **read**, not when it is written. Change a
 floor and every stored snapshot re-screens under the new rule without a single
 extra API call.
+
+**On the $1b floor.** At the original $50m floor this screen ranked memecoins
+into the entire top eight on real data, and no reweighting fixed it - halving
+momentum and zeroing the size tilt still left five of them there. That is the
+factors working correctly: memecoins genuinely score well on recent momentum,
+turnover and circulating float. The universe is the lever, not the weights. $1b
+leaves roughly 40 investable coins for an 8-position book - a 5:1 selection
+ratio. Going much higher is counterproductive: at $5b only ~13 coins qualify, so
+the screen picks 8 from 13 and collapses into the equal-weight-top-8 benchmark
+it exists to be measured against, and `exit_rank_threshold` would exceed the
+universe size so nothing could ever exit on rank.
 
 ### Factors
 
