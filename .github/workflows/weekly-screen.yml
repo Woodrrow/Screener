@@ -32,15 +32,25 @@ jobs:
       # Every data step runs before anything is committed. If the API call
       # fails, the job fails here and the repo keeps the last good state
       # rather than gaining a half-written snapshot.
+      # A dated snapshot is irreplaceable: you cannot go back and take
+      # today's universe tomorrow. So these two steps are the ones that gate
+      # the commit below - if they succeed, their output gets committed even
+      # if a later step fails.
       - name: Take snapshot
+        id: snapshot
         env:
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
         run: uv run screener snapshot
 
       - name: Update price history
+        id: history
         env:
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
-        run: uv run screener history --days 365 --limit 60
+        # Must cover the whole investable universe, not just the top 60.
+        # Coins without stored history score worst-case on volatility, and
+        # when most of the book has no history that factor stops
+        # discriminating between coins altogether.
+        run: uv run screener history --days 365 --limit 250
 
       - name: Verify the snapshot is readable
         run: |
@@ -52,8 +62,11 @@ jobs:
       - name: Build report
         run: uv run screener report
 
+      # always() so a failure in papertrade or report cannot discard a
+      # snapshot that was fetched successfully. The job still reports failure;
+      # it just does not throw away the irreplaceable part of the run.
       - name: Commit the record
-        if: success()
+        if: always() && steps.snapshot.outcome == 'success' && steps.history.outcome == 'success'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"

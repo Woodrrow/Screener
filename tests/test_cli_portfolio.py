@@ -252,7 +252,14 @@ def test_backtest_runs_and_writes_its_outputs(portfolio_env: dict[str, Path]) ->
     assert "This backtest is built from the coins" in result.output
 
 
-def test_report_needs_a_paper_record_first(portfolio_env: dict[str, Path]) -> None:
+def test_report_with_no_record_yet_is_not_an_error(portfolio_env: dict[str, Path]) -> None:
+    """A scheduled pipeline must not go red just because the record has not started.
+
+    This is the bug that failed the first real weekly run: papertrade correctly
+    no-opped on a single snapshot, report then exited 1, and the freshly fetched
+    snapshot was discarded instead of committed.
+    """
+    reports = portfolio_env["root"] / "reports"
     result = runner.invoke(
         cli.app,
         [
@@ -264,11 +271,33 @@ def test_report_needs_a_paper_record_first(portfolio_env: dict[str, Path]) -> No
             "--data-dir",
             str(portfolio_env["data"]),
             "--reports-dir",
-            str(portfolio_env["root"] / "reports"),
+            str(reports),
         ],
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 0
     assert "No paper-trading record yet" in result.output
+    assert not list(reports.glob("*.md"))
+
+
+def test_papertrade_and_report_agree_on_nothing_to_do(
+    tmp_path: Path, universe_frame: pd.DataFrame
+) -> None:
+    """Both commands treat 'not started yet' as exit 0, so the pipeline survives."""
+    screen_path = tmp_path / "screen.yaml"
+    screen_path.write_text(SCREEN_YAML)
+    portfolio_path = tmp_path / "portfolio.yaml"
+    portfolio_path.write_text(PORTFOLIO_YAML)
+    data_dir = tmp_path / "data"
+    SnapshotStore(data_dir / "snapshots").write(universe_frame, SIGNAL_DAY, source="fixture")
+
+    common = ["-c", str(screen_path), "-p", str(portfolio_path), "--data-dir", str(data_dir)]
+    assert runner.invoke(cli.app, ["papertrade", *common]).exit_code == 0
+    assert (
+        runner.invoke(
+            cli.app, ["report", *common, "--reports-dir", str(tmp_path / "reports")]
+        ).exit_code
+        == 0
+    )
 
 
 def test_report_renders_the_forward_record(portfolio_env: dict[str, Path]) -> None:

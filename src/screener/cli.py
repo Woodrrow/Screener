@@ -506,8 +506,14 @@ def report_command(
     store = StateStore(layout.portfolio)
     state = store.load()
     if state is None or not state.equity_curve:
-        console.print("[red]No paper-trading record yet. Run `screener papertrade` first.[/]")
-        raise typer.Exit(code=1)
+        # Not an error: there is simply nothing to report yet. `papertrade`
+        # treats "too few snapshots" the same way, and a scheduled pipeline
+        # should not go red because the record has not started.
+        console.print(
+            "[yellow]No paper-trading record yet[/], so there is nothing to report. "
+            "Run `screener papertrade` once two snapshots exist."
+        )
+        raise typer.Exit(code=0)
 
     equity = pd.Series(
         {day: state.equity_curve[day] for day in sorted(state.equity_curve)}, dtype="float64"

@@ -5,7 +5,9 @@ source:
   vs_currency: usd
   # Free tier is 10-30 calls/min depending on load. 10 is the conservative floor:
   # slower runs beat a rate-limit ban mid-snapshot.
-  rate_per_minute: 10.0
+  # The demo tier allows far more than this; 30/min keeps a wide margin
+  # while cutting a full history refresh from ~15 minutes to ~5.
+  rate_per_minute: 30.0
   max_retries: 5
 
 universe:
