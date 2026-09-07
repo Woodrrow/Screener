@@ -250,3 +250,81 @@ def test_backtest_runs_and_writes_its_outputs(portfolio_env: dict[str, Path]) ->
     assert (curve["equity_usd"] > 0).all()
     # The warning is printed on every run, not only when it is refused.
     assert "This backtest is built from the coins" in result.output
+
+
+def test_report_needs_a_paper_record_first(portfolio_env: dict[str, Path]) -> None:
+    result = runner.invoke(
+        cli.app,
+        [
+            "report",
+            "-c",
+            str(portfolio_env["screen"]),
+            "-p",
+            str(portfolio_env["portfolio"]),
+            "--data-dir",
+            str(portfolio_env["data"]),
+            "--reports-dir",
+            str(portfolio_env["root"] / "reports"),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "No paper-trading record yet" in result.output
+
+
+def test_report_renders_the_forward_record(portfolio_env: dict[str, Path]) -> None:
+    _papertrade(portfolio_env)
+    reports = portfolio_env["root"] / "reports"
+    result = runner.invoke(
+        cli.app,
+        [
+            "report",
+            "-c",
+            str(portfolio_env["screen"]),
+            "-p",
+            str(portfolio_env["portfolio"]),
+            "--data-dir",
+            str(portfolio_env["data"]),
+            "--reports-dir",
+            str(reports),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    markdown = (reports / "papertrade-report.md").read_text()
+    assert "Paper trading record" in markdown
+    assert "Equal-weight top 8" in markdown
+    assert "edge and noise" in markdown  # one rebalance is not a track record
+    assert len(list(reports.glob("papertrade-report-*.png"))) == 4
+
+
+def test_backtest_report_carries_the_survivorship_banner(
+    portfolio_env: dict[str, Path],
+) -> None:
+    reports = portfolio_env["root"] / "reports"
+    result = runner.invoke(
+        cli.app,
+        [
+            "backtest",
+            "-c",
+            str(portfolio_env["screen"]),
+            "-p",
+            str(portfolio_env["portfolio"]),
+            "--data-dir",
+            str(portfolio_env["data"]),
+            "--reports-dir",
+            str(reports),
+            "--from",
+            (FILL_DAY - timedelta(days=60)).isoformat(),
+            "--to",
+            FILL_DAY.isoformat(),
+            "--acknowledge-survivorship",
+            "--report",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    written = next(reports.glob("backtest-*.md"))
+    markdown = written.read_text()
+    assert "Survivorship warning" in markdown
+    assert "dilution" in markdown
+    assert "Equal-weight top 8" in markdown

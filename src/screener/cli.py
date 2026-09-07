@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -14,7 +15,13 @@ from rich.table import Table
 from screener import factors
 from screener import universe as universe_filters
 from screener.backtest import SURVIVORSHIP_WARNING, UniverseBuilder, metadata_from_snapshot
-from screener.config import ScreenConfig, load_portfolio_config, load_screen_config
+from screener.benchmarks import buy_and_hold, equal_weight_basket
+from screener.config import (
+    PortfolioConfig,
+    ScreenConfig,
+    load_portfolio_config,
+    load_screen_config,
+)
 from screener.data.coingecko import CoinGeckoClient
 from screener.data.history import HistoryStore
 from screener.data.snapshots import SnapshotStore, WriteStatus
@@ -25,6 +32,7 @@ from screener.portfolio.engine import prices_on, run_simulation, step_once
 from screener.portfolio.schedule import Cadence, is_due
 from screener.portfolio.simulator import RebalancePlan
 from screener.portfolio.state import PortfolioState, StateStore, config_fingerprint
+from screener.report import ReportInputs, write_report
 from screener.screen import load_price_panel, run_screen, write_ranking_csv
 
 app = typer.Typer(
@@ -274,6 +282,45 @@ PortfolioConfigOption = Annotated[
 ]
 
 
+def _investable(frame: pd.DataFrame, config: ScreenConfig) -> pd.DataFrame:
+    return universe_filters.apply_filters(
+        frame,
+        min_market_cap_usd=config.universe.min_market_cap_usd,
+        min_volume_24h_usd=config.universe.min_volume_24h_usd,
+        min_turnover=config.universe.min_turnover,
+        extra_stablecoin_symbols=frozenset(config.universe.extra_stablecoin_symbols),
+        extra_excluded_coin_ids=frozenset(config.universe.extra_excluded_coin_ids),
+    )
+
+
+def _build_benchmarks(
+    *,
+    price_panel: pd.DataFrame,
+    universe_for: Callable[[date], pd.DataFrame | None],
+    portfolio: PortfolioConfig,
+    capital: float,
+    start: date,
+    end: date,
+) -> dict[str, pd.Series[float]]:
+    """BTC, ETH and the honest one: equal-weight top 8, same cadence, same costs."""
+    costs = CostModel(fee_bps=portfolio.fee_bps, slippage_bps=portfolio.slippage_bps)
+    curves: dict[str, pd.Series[float]] = {}
+    for label, coin_id in (("Buy and hold BTC", "bitcoin"), ("Buy and hold ETH", "ethereum")):
+        if coin_id in price_panel.columns:
+            curves[label] = buy_and_hold(
+                price_panel, coin_id, capital=capital, costs=costs, start=start, end=end
+            )
+    curves["Equal-weight top 8"] = equal_weight_basket(
+        price_panel,
+        universe_for=universe_for,
+        config=portfolio,
+        capital=capital,
+        start=start,
+        end=end,
+    )
+    return curves
+
+
 def _rank_snapshot(
     frame: pd.DataFrame,
     *,
@@ -325,6 +372,9 @@ def backtest(
             "--acknowledge-survivorship",
             help="Confirm you understand the backtest universe contains only survivors.",
         ),
+    ] = False,
+    report: Annotated[
+        bool, typer.Option("--report", help="Also write the markdown report and charts.")
     ] = False,
 ) -> None:
     """Replay the rebalance loop over reconstructed history."""
@@ -404,6 +454,105 @@ def backtest(
             "universe and were skipped.[/]"
         )
     console.print(f"Wrote {curve_path} and {trades_path}")
+
+    if report:
+
+        def universe_for(signal_date: date) -> pd.DataFrame | None:
+            frame = builder.frame_for(signal_date)
+            return None if frame.empty else _investable(frame, config)
+
+        benchmarks = _build_benchmarks(
+            price_panel=builder.prices,
+            universe_for=universe_for,
+            portfolio=portfolio,
+            capital=portfolio.initial_capital,
+            start=start,
+            end=end,
+        )
+        path = write_report(
+            ReportInputs(
+                label=f"Backtest {start} to {end}",
+                equity=result.equity_curve,
+                trades=result.trades,
+                benchmarks=benchmarks,
+                starting_capital=portfolio.initial_capital,
+                generated_on=datetime.now(UTC).date(),
+                survivorship_warning=SURVIVORSHIP_WARNING,
+                notes=[
+                    "Supply data is not point-in-time on the free tier, so the dilution "
+                    "factor is inert in this backtest and contributes nothing to the ranking.",
+                    "All-time highs are running maxima over history to each rebalance date, "
+                    "never the present-day figure.",
+                ],
+            ),
+            reports_dir,
+            stem=f"backtest-{start}-{end}",
+        )
+        console.print(f"[green]Report[/] {path}")
+
+
+@app.command("report")
+def report_command(
+    config_path: ConfigOption = Path("config/screen.yaml"),
+    portfolio_path: PortfolioConfigOption = Path("config/portfolio.yaml"),
+    data_dir: DataDirOption = Path("data"),
+    reports_dir: ReportsDirOption = Path("reports"),
+) -> None:
+    """Build the markdown report and charts for the forward paper record."""
+    config = load_screen_config(config_path)
+    portfolio = load_portfolio_config(portfolio_path)
+    layout = default_layout(data_dir, reports_dir).ensure()
+
+    store = StateStore(layout.portfolio)
+    state = store.load()
+    if state is None or not state.equity_curve:
+        console.print("[red]No paper-trading record yet. Run `screener papertrade` first.[/]")
+        raise typer.Exit(code=1)
+
+    equity = pd.Series(
+        {day: state.equity_curve[day] for day in sorted(state.equity_curve)}, dtype="float64"
+    )
+    equity.index.name = "date"
+    start, end = equity.index[0], equity.index[-1]
+
+    snapshots = SnapshotStore(layout.snapshots)
+    history = HistoryStore(layout.history)
+    price_panel = history.price_panel(history.available_coins())
+
+    def universe_for(signal_date: date) -> pd.DataFrame | None:
+        found = snapshots.read_on_or_before(signal_date)
+        if found is None:
+            return None
+        return _investable(found[1], config)
+
+    benchmarks = _build_benchmarks(
+        price_panel=price_panel,
+        universe_for=universe_for,
+        portfolio=portfolio,
+        capital=state.initial_capital,
+        start=start,
+        end=end,
+    )
+
+    path = write_report(
+        ReportInputs(
+            label="Paper trading record",
+            equity=equity,
+            trades=store.read_trades(),
+            benchmarks=benchmarks,
+            starting_capital=state.initial_capital,
+            generated_on=datetime.now(UTC).date(),
+            notes=[
+                "This is a forward record: every trade was priced from a snapshot taken "
+                "before the fill, so none of it is fitted to data it could not have seen.",
+                "CoinGecko volume figures include wash trading on some venues, which "
+                "flatters the liquidity factor for coins listed on the worst offenders.",
+            ],
+        ),
+        reports_dir,
+        stem="papertrade-report",
+    )
+    console.print(f"[green]Report[/] {path}")
 
 
 @app.command()
