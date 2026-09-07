@@ -1,15 +1,25 @@
-name: Weekly screen
+name: Scheduled screen
 
 on:
   schedule:
-    # Mondays 08:00 UTC. The rebalance cadence anchors on Monday too, so the
-    # snapshot taken here is the one the *following* week trades against.
-    - cron: "0 8 * * 1"
+    # Daily at 08:00 UTC. Note this is the *snapshot* cadence, not the trading
+    # cadence - the two are deliberately different.
+    #
+    # Snapshotting daily is close to free (41 calls, ~13% of a 10,000/month
+    # quota) and every snapshot is permanent, un-refetchable point-in-time data
+    # that makes the eventual survivorship-free backtest better.
+    #
+    # Trading daily would not be free. `rebalance: weekly` in portfolio.yaml
+    # keeps the book on a weekly rhythm; papertrade no-ops on the other six days
+    # via is_due(). At 40bps round-trip on $122 positions, rebalancing daily
+    # would multiply turnover roughly sevenfold to chase signals that barely
+    # move day to day - and turnover is the dominant cost at this account size.
+    - cron: "0 8 * * *"
   workflow_dispatch:
 
 concurrency:
   # Never let two runs write the portfolio state at once.
-  group: weekly-screen
+  group: scheduled-screen
   cancel-in-progress: false
 
 permissions:
@@ -79,7 +89,7 @@ jobs:
             echo "Nothing changed; not committing."
             exit 0
           fi
-          git commit -m "Weekly screen: snapshot, papertrade and report for $(date -u +%Y-%m-%d)"
+          git commit -m "Screen: snapshot, papertrade and report for $(date -u +%Y-%m-%d)"
           for attempt in 1 2 3 4; do
             if git push; then
               exit 0

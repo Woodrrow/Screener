@@ -262,9 +262,19 @@ first optimisation, and the turnover figure tells you what it bought you.
 
 ## The scheduled job
 
-`.github/workflows/weekly-screen.yml` runs Mondays at 08:00 UTC (and on
-`workflow_dispatch`): snapshot → history → papertrade → report → commit the
-result back to the repo.
+`.github/workflows/screen.yml` runs **daily** at 08:00 UTC (and on
+`workflow_dispatch`): snapshot → history → papertrade → report → dashboard →
+commit the result back to the repo.
+
+**Two cadences, deliberately different.** Snapshots are taken daily; the book
+rebalances weekly. A snapshot is permanent point-in-time data that can never be
+refetched, and taking one costs 41 API calls - about 13% of a 10,000/month quota
+over a month, so there is no reason not to have one every day. Trading daily is
+a different matter: at 40bps round-trip on $122 positions it would multiply
+turnover roughly sevenfold chasing signals that barely move day to day, and
+turnover is the dominant cost at this account size. `rebalance: weekly` in
+portfolio.yaml governs trading; `papertrade` no-ops on the other six days and
+says so.
 
 Every data step runs before anything is committed. If the CoinGecko call fails,
 the job fails there and the repo keeps its last good state rather than gaining a
