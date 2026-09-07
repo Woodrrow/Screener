@@ -1,0 +1,76 @@
+name: Weekly screen
+
+on:
+  schedule:
+    # Mondays 08:00 UTC. The rebalance cadence anchors on Monday too, so the
+    # snapshot taken here is the one the *following* week trades against.
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  # Never let two runs write the portfolio state at once.
+  group: weekly-screen
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      # Every data step runs before anything is committed. If the API call
+      # fails, the job fails here and the repo keeps the last good state
+      # rather than gaining a half-written snapshot.
+      - name: Take snapshot
+        env:
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+        run: uv run screener snapshot
+
+      - name: Update price history
+        env:
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+        run: uv run screener history --days 365 --limit 60
+
+      - name: Verify the snapshot is readable
+        run: |
+          uv run screener screen --top 10
+
+      - name: Paper trade
+        run: uv run screener papertrade
+
+      - name: Build report
+        run: uv run screener report
+
+      - name: Commit the record
+        if: success()
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/snapshots data/portfolio reports
+          if git diff --cached --quiet; then
+            echo "Nothing changed; not committing."
+            exit 0
+          fi
+          git commit -m "Weekly screen: snapshot, papertrade and report for $(date -u +%Y-%m-%d)"
+          for attempt in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt); refreshing and retrying."
+            sleep $((2 ** attempt))
+            git pull --rebase --autostash
+          done
+          echo "::error::Could not push the weekly record"
+          exit 1

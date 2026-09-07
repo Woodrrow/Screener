@@ -39,7 +39,13 @@ class ReportInputs:
 
 
 def _format_pct(value: float) -> str:
+    """Signed, for quantities that can go either way (returns, drawdown)."""
     return "n/a" if pd.isna(value) else f"{value:+.2%}"
+
+
+def _format_magnitude(value: float) -> str:
+    """Unsigned, for quantities that cannot be negative (vol, turnover, win rate)."""
+    return "n/a" if pd.isna(value) else f"{value:.2%}"
 
 
 def _format_ratio(value: float) -> str:
@@ -56,7 +62,7 @@ def _summary_table(inputs: ReportInputs) -> str:
     )
     lines = [
         f"| {row.label} | {row.observations} | {_format_pct(row.total_return)} | "
-        f"{_format_pct(row.annualised_return)} | {_format_pct(row.volatility)} | "
+        f"{_format_pct(row.annualised_return)} | {_format_magnitude(row.volatility)} | "
         f"{_format_ratio(row.sharpe)} | {_format_ratio(row.sortino)} | "
         f"{_format_pct(row.max_drawdown)} | {_format_ratio(row.calmar)} |"
         for row in rows
@@ -68,8 +74,11 @@ def _trading_table(inputs: ReportInputs) -> str:
     costs = metrics.cost_drag(inputs.trades, inputs.starting_capital)
     rows = [
         ("Trades", f"{len(inputs.trades)}"),
-        ("Turnover per rebalance", _format_pct(metrics.turnover(inputs.trades, inputs.equity))),
-        ("Win rate (closed round trips)", _format_pct(metrics.win_rate(inputs.trades))),
+        (
+            "Turnover per rebalance",
+            _format_magnitude(metrics.turnover(inputs.trades, inputs.equity)),
+        ),
+        ("Win rate (closed round trips)", _format_magnitude(metrics.win_rate(inputs.trades))),
         ("Average holding period", f"{metrics.average_holding_days(inputs.trades):.1f} days"),
         ("Fees", f"${costs['fees_usd']:,.2f}"),
         ("Slippage", f"${costs['slippage_usd']:,.2f}"),

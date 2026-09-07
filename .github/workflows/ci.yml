@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      # The suite blocks sockets in conftest, so a test that reaches for the
+      # live API fails here rather than turning CI into a rate-limited flake.
+      - name: Test
+        run: uv run pytest --cov=screener --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  dry-run:
+    # Proves the paper trader can plan a rebalance from the committed snapshots
+    # without touching the network or mutating state.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Papertrade dry run
+        run: uv run screener papertrade --dry-run
+
+      - name: Confirm nothing was written
+        run: |
+          if ! git diff --quiet --exit-code; then
+            echo "::error::papertrade --dry-run modified tracked files"
+            git --no-pager diff --stat
+            exit 1
+          fi

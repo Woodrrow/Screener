@@ -151,3 +151,12 @@ def test_markdown_is_deterministic(tmp_path: Path) -> None:
     first = build_markdown(_inputs(), {}, tmp_path)
     second = build_markdown(_inputs(), {}, tmp_path)
     assert first == second
+
+
+def test_magnitudes_are_not_printed_with_a_plus_sign(tmp_path: Path) -> None:
+    """Volatility, turnover and win rate cannot be negative; a + reads as a change."""
+    text = build_markdown(_inputs(), {}, tmp_path)
+    turnover_line = next(line for line in text.splitlines() if "Turnover" in line)
+    win_rate_line = next(line for line in text.splitlines() if "Win rate" in line)
+    assert "+" not in turnover_line
+    assert "+" not in win_rate_line
