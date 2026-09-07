@@ -112,20 +112,29 @@ class HistoryStore:
         self.write(coin_id, merged)
         return HistoryUpdate(coin_id, rows_before, len(merged), fetch_days, skipped=False)
 
-    def price_panel(self, coin_ids: list[str]) -> pd.DataFrame:
-        """Wide date x coin_id price frame, sorted and column-ordered explicitly."""
+    def panel(self, coin_ids: list[str], column: str = "price") -> pd.DataFrame:
+        """Wide date x coin_id frame for one stored column.
+
+        Sorted on both axes explicitly, so a panel never depends on filesystem
+        listing order or on the order coin ids were passed in.
+        """
+        if column not in HISTORY_COLUMNS or column == "date":
+            raise ValueError(f"{column!r} is not a stored history column")
         columns: dict[str, pd.Series[float]] = {}
         for coin_id in sorted(set(coin_ids)):
             frame = self.read(coin_id)
             if frame.empty:
                 continue
-            series = frame.set_index("date")["price"]
+            series = frame.set_index("date")[column]
             columns[coin_id] = series[~series.index.duplicated(keep="last")]
         if not columns:
             return pd.DataFrame()
-        panel = pd.DataFrame(columns)
-        panel.index.name = "date"
-        return panel.sort_index().loc[:, sorted(panel.columns)]
+        wide = pd.DataFrame(columns)
+        wide.index.name = "date"
+        return wide.sort_index().loc[:, sorted(wide.columns)]
+
+    def price_panel(self, coin_ids: list[str]) -> pd.DataFrame:
+        return self.panel(coin_ids, "price")
 
 
 def _normalise(frame: pd.DataFrame) -> pd.DataFrame:

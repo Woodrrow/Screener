@@ -12,9 +12,9 @@ from datetime import date
 
 import pandas as pd
 
+from screener.errors import LookaheadError
 
-class LookaheadError(AssertionError):
-    """Raised when data timestamped after `as_of` reaches a factor."""
+__all__ = ["FactorContext", "LookaheadError"]
 
 
 @dataclass(frozen=True)

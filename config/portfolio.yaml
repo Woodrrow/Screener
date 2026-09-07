@@ -1,0 +1,28 @@
+# The simulated book. Every field here is also the papertrade book's rules.
+
+initial_capital: 1000.0
+max_positions: 8
+min_position_usd: 50.0      # below this, fees eat the position
+sizing: equal_weight        # also: score_weighted, inverse_vol
+rebalance: weekly           # also: monthly, daily
+max_weight_per_position: 0.20
+cash_buffer: 0.02
+
+# The gap between these two is deliberate. Buying and selling at the same rank
+# cutoff churns the book every time a coin oscillates around the boundary, and
+# at $1,000 with a 40bps round trip that churn is the dominant cost. Widen the
+# gap to trade less; the report prints turnover so the effect is visible.
+entry_rank_threshold: 8     # buy if ranked top 8
+exit_rank_threshold: 15     # sell only once it falls out of the top 15
+
+# No-trade band on existing positions, as a fraction of target value. 0.0 means
+# a full rebalance to target every period - the expensive, pessimistic default.
+rebalance_band: 0.0
+
+fee_bps: 10
+slippage_bps: 30
+no_shorts: true
+no_leverage: true
+
+# Which screen.yaml preset drives the signal. null uses that file's default.
+preset: null

@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
+import pandas as pd
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from screener import factors
 from screener import universe as universe_filters
-from screener.config import ScreenConfig, load_screen_config
+from screener.backtest import SURVIVORSHIP_WARNING, UniverseBuilder, metadata_from_snapshot
+from screener.config import ScreenConfig, load_portfolio_config, load_screen_config
 from screener.data.coingecko import CoinGeckoClient
 from screener.data.history import HistoryStore
 from screener.data.snapshots import SnapshotStore, WriteStatus
 from screener.data.source import DataSource
 from screener.paths import Layout, default_layout
+from screener.portfolio.costs import CostModel
+from screener.portfolio.engine import prices_on, run_simulation, step_once
+from screener.portfolio.schedule import Cadence, is_due
+from screener.portfolio.simulator import RebalancePlan
+from screener.portfolio.state import PortfolioState, StateStore, config_fingerprint
 from screener.screen import load_price_panel, run_screen, write_ranking_csv
 
 app = typer.Typer(
@@ -260,6 +267,260 @@ def screen(
     )
     write_ranking_csv(result, destination)
     console.print(f"[green]Wrote[/] {len(result.ranking)} ranked rows to {destination}")
+
+
+PortfolioConfigOption = Annotated[
+    Path, typer.Option("--portfolio", "-p", help="Path to portfolio.yaml.")
+]
+
+
+def _rank_snapshot(
+    frame: pd.DataFrame,
+    *,
+    as_of: date,
+    config: ScreenConfig,
+    preset: str | None,
+    price_panel: pd.DataFrame | None,
+) -> pd.DataFrame:
+    preset_name, weights = config.weights_for(preset)
+    return run_screen(
+        frame,
+        as_of=as_of,
+        weights=weights,
+        preset=preset_name,
+        universe_config=config.universe,
+        price_panel=price_panel,
+    ).ranking
+
+
+def _print_plan(plan: RebalancePlan, title: str) -> None:
+    table = Table(
+        "action", "coin", "rank", "current $", "target $", "delta $", "reason", title=title
+    )
+    for action in plan.actions:
+        table.add_row(
+            action.action,
+            action.coin_id,
+            "-" if action.rank is None else str(action.rank),
+            f"{action.current_usd:,.2f}",
+            f"{action.target_usd:,.2f}",
+            f"{action.delta_usd:+,.2f}",
+            action.reason,
+        )
+    console.print(table)
+
+
+@app.command()
+def backtest(
+    config_path: ConfigOption = Path("config/screen.yaml"),
+    portfolio_path: PortfolioConfigOption = Path("config/portfolio.yaml"),
+    data_dir: DataDirOption = Path("data"),
+    reports_dir: ReportsDirOption = Path("reports"),
+    from_date: Annotated[str, typer.Option("--from", help="Start date (YYYY-MM-DD).")] = "",
+    to_date: Annotated[str, typer.Option("--to", help="End date (YYYY-MM-DD).")] = "",
+    preset: Annotated[str | None, typer.Option("--preset")] = None,
+    acknowledge_survivorship: Annotated[
+        bool,
+        typer.Option(
+            "--acknowledge-survivorship",
+            help="Confirm you understand the backtest universe contains only survivors.",
+        ),
+    ] = False,
+) -> None:
+    """Replay the rebalance loop over reconstructed history."""
+    if not acknowledge_survivorship:
+        console.print(f"[yellow]{SURVIVORSHIP_WARNING}[/]")
+        console.print(
+            "[red]Refusing to run.[/] Pass --acknowledge-survivorship once you have read that."
+        )
+        raise typer.Exit(code=2)
+
+    config = load_screen_config(config_path)
+    portfolio = load_portfolio_config(portfolio_path)
+    layout = default_layout(data_dir, reports_dir).ensure()
+
+    snapshots = SnapshotStore(layout.snapshots)
+    latest = snapshots.latest_date()
+    if latest is None:
+        console.print("[red]No snapshots yet. Run `screener snapshot` first.[/]")
+        raise typer.Exit(code=1)
+    metadata = metadata_from_snapshot(snapshots.read(latest))
+
+    history = HistoryStore(layout.history)
+    coin_ids = history.available_coins()
+    if not coin_ids:
+        console.print("[red]No price history. Run `screener history` first.[/]")
+        raise typer.Exit(code=1)
+
+    builder = UniverseBuilder.from_history(history, coin_ids, metadata)
+    covered = builder.dates
+    if not covered:
+        console.print("[red]The history store has no usable dates.[/]")
+        raise typer.Exit(code=1)
+
+    start = date.fromisoformat(from_date) if from_date else covered[0]
+    end = date.fromisoformat(to_date) if to_date else covered[-1]
+    if end <= start:
+        console.print("[red]--to must be after --from.[/]")
+        raise typer.Exit(code=1)
+
+    def ranking_for(signal_date: date) -> pd.DataFrame | None:
+        frame = builder.frame_for(signal_date)
+        if frame.empty:
+            return None
+        panel = builder.prices.loc[[day for day in builder.prices.index if day <= signal_date]]
+        return _rank_snapshot(
+            frame, as_of=signal_date, config=config, preset=preset, price_panel=panel
+        )
+
+    console.print(f"[yellow]{SURVIVORSHIP_WARNING}[/]")
+    console.print(f"Replaying {start} to {end} on {len(coin_ids)} coins...")
+    result = run_simulation(
+        price_panel=builder.prices,
+        ranking_for=ranking_for,
+        config=portfolio,
+        start=start,
+        end=end,
+    )
+
+    curve_path = reports_dir / f"backtest-equity-{start}-{end}.csv"
+    trades_path = reports_dir / f"backtest-trades-{start}-{end}.csv"
+    result.equity_curve.to_frame("equity_usd").to_csv(
+        curve_path, float_format="%.10g", lineterminator="\n"
+    )
+    result.trades.to_csv(trades_path, index=False, float_format="%.10g", lineterminator="\n")
+
+    fees = float(result.trades["fee_usd"].sum()) if not result.trades.empty else 0.0
+    slippage = float(result.trades["slippage_usd"].sum()) if not result.trades.empty else 0.0
+    total_return = result.final_equity / portfolio.initial_capital - 1.0
+    console.print(
+        f"[green]Done.[/] {len(result.plans)} rebalances, {len(result.trades)} trades. "
+        f"Final equity ${result.final_equity:,.2f} ({total_return:+.1%}). "
+        f"Costs ${fees + slippage:,.2f} (${fees:,.2f} fees, ${slippage:,.2f} slippage)."
+    )
+    if result.skipped_rebalances:
+        console.print(
+            f"[yellow]{len(result.skipped_rebalances)} rebalance dates had no rankable "
+            "universe and were skipped.[/]"
+        )
+    console.print(f"Wrote {curve_path} and {trades_path}")
+
+
+@app.command()
+def papertrade(
+    config_path: ConfigOption = Path("config/screen.yaml"),
+    portfolio_path: PortfolioConfigOption = Path("config/portfolio.yaml"),
+    data_dir: DataDirOption = Path("data"),
+    preset: Annotated[str | None, typer.Option("--preset")] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Compute and print the trades without touching state."),
+    ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Rebalance even if one is not due yet.")
+    ] = False,
+) -> None:
+    """Run one rebalance step against the newest snapshot and persist the result."""
+    config = load_screen_config(config_path)
+    portfolio = load_portfolio_config(portfolio_path)
+    layout = default_layout(data_dir).ensure()
+
+    snapshots = SnapshotStore(layout.snapshots)
+    available = snapshots.available_dates()
+    if len(available) < 2:
+        console.print(
+            "[yellow]Need at least two snapshots before trading.[/] A signal from a snapshot "
+            "dated t may only be filled at a price dated t+1 or later, so the first run after "
+            "the first snapshot is always a no-op."
+        )
+        raise typer.Exit(code=0)
+
+    execution_date, execution_snapshot = available[-1], snapshots.read(available[-1])
+    signal_date, signal_snapshot = available[-2], snapshots.read(available[-2])
+
+    store = StateStore(layout.portfolio)
+    state = store.load() or PortfolioState.fresh(portfolio)
+    fingerprint = config_fingerprint(portfolio)
+    if state.config_fingerprint and state.config_fingerprint != fingerprint:
+        console.print(
+            "[yellow]Portfolio config has changed since this track record started.[/] "
+            "The curve before and after this point is not one strategy."
+        )
+        state.config_fingerprint = fingerprint
+
+    if not force and not is_due(execution_date, state.last_rebalance, Cadence(portfolio.rebalance)):
+        console.print(
+            f"No rebalance due: last was {state.last_rebalance}, cadence is "
+            f"{portfolio.rebalance}. Pass --force to override."
+        )
+        raise typer.Exit(code=0)
+
+    history = HistoryStore(layout.history)
+    panel = load_price_panel(history, signal_snapshot["coin_id"].astype(str).tolist(), signal_date)
+    ranking = _rank_snapshot(
+        signal_snapshot,
+        as_of=signal_date,
+        config=config,
+        preset=preset,
+        price_panel=panel if not panel.empty else None,
+    )
+
+    prices = {
+        str(coin_id): float(price)
+        for coin_id, price in zip(
+            execution_snapshot["coin_id"].astype(str),
+            execution_snapshot["current_price"].astype("float64"),
+            strict=True,
+        )
+        if price > 0
+    }
+
+    costs = CostModel(fee_bps=portfolio.fee_bps, slippage_bps=portfolio.slippage_bps)
+    ledger = state.to_ledger(costs)
+
+    # Mark the book every day since the last run before trading. Holdings were
+    # constant over that window, so this is the true daily curve, not a sample.
+    full_panel = history.price_panel(sorted(set(ledger.positions) | set(prices)))
+    if not full_panel.empty:
+        known = sorted(state.equity_curve)
+        cursor = (known[-1] if known else signal_date) + timedelta(days=1)
+        while cursor < execution_date:
+            day_prices = prices_on(full_panel, cursor)
+            if day_prices:
+                ledger.observe_prices(day_prices)
+                state.equity_curve[cursor] = ledger.equity(day_prices)
+            cursor += timedelta(days=1)
+
+    plan, executed = step_once(
+        ledger,
+        config=portfolio,
+        ranking=ranking,
+        prices=prices,
+        signal_date=signal_date,
+        execution_date=execution_date,
+        costs=costs,
+        dry_run=dry_run,
+    )
+
+    _print_plan(plan, f"signal {signal_date} -> fill {execution_date}")
+
+    if dry_run:
+        console.print("[yellow]Dry run: state and trade log were not written.[/]")
+        raise typer.Exit(code=0)
+
+    state.absorb(ledger)
+    state.last_rebalance = execution_date
+    state.last_signal_date = signal_date
+    state.equity_curve[execution_date] = ledger.equity(prices)
+    store.append_trades(executed)
+    store.save(state)
+
+    console.print(
+        f"[green]Executed[/] {len(executed)} trades. Equity "
+        f"${state.equity_curve[execution_date]:,.2f}, cash ${state.cash:,.2f}, "
+        f"{len(state.positions)} positions."
+    )
+    console.print(f"State at {store.state_path}, trade log at {store.trades_path}")
 
 
 @app.command()
