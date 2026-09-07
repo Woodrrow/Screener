@@ -83,6 +83,30 @@ uv run screener report                   # markdown + PNGs in reports/
 | `backtest` | Replay the rebalance loop over reconstructed history |
 | `papertrade` | One rebalance step against the newest snapshot; persists state |
 | `report` | Markdown report and charts for the forward record |
+| `dashboard` | One self-contained HTML page with everything on it |
+
+---
+
+## The dashboard
+
+```bash
+uv run screener dashboard      # -> reports/dashboard.html
+```
+
+One file, no server, no CDN, no network requests at all - open it straight from
+disk. It carries the ranking as a sortable, filterable table with every factor
+percentile heat-mapped beside the score, the equity curve against its three
+benchmarks, current holdings, the recent trade log with the rank that triggered
+each fill, what the filters excluded and why, and the active factor weights.
+
+The heat ramp encodes magnitude as distance from the background in both themes -
+pale-on-light, bright-on-dark - and every cell also prints its number, so the
+colour is a reading aid rather than the only channel. Dark mode follows the
+system setting, with a toggle that overrides it.
+
+The weekly job regenerates it and commits it, so `reports/dashboard.html` is
+always the current view. GitHub renders it as source rather than as a page; open
+it locally, or enable GitHub Pages if you want a URL.
 
 ---
 

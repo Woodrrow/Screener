@@ -22,6 +22,7 @@ from screener.config import (
     load_portfolio_config,
     load_screen_config,
 )
+from screener.dashboard import DashboardData, write_dashboard
 from screener.data.coingecko import CoinGeckoClient
 from screener.data.history import HistoryStore
 from screener.data.snapshots import SnapshotStore, WriteStatus
@@ -559,6 +560,125 @@ def report_command(
         stem="papertrade-report",
     )
     console.print(f"[green]Report[/] {path}")
+
+
+@app.command()
+def dashboard(
+    config_path: ConfigOption = Path("config/screen.yaml"),
+    portfolio_path: PortfolioConfigOption = Path("config/portfolio.yaml"),
+    data_dir: DataDirOption = Path("data"),
+    reports_dir: ReportsDirOption = Path("reports"),
+    preset: Annotated[str | None, typer.Option("--preset")] = None,
+    as_of: Annotated[
+        str | None, typer.Option("--as-of", help="Snapshot date. Defaults to the newest.")
+    ] = None,
+    output: Annotated[
+        Path | None, typer.Option("--output", help="Where to write the HTML.")
+    ] = None,
+) -> None:
+    """Render one self-contained HTML page: ranking, record, trades and filters."""
+    config = load_screen_config(config_path)
+    portfolio = load_portfolio_config(portfolio_path)
+    layout = default_layout(data_dir, reports_dir).ensure()
+
+    snapshots = SnapshotStore(layout.snapshots)
+    if as_of is None:
+        day = snapshots.latest_date()
+        if day is None:
+            console.print("[red]No snapshots yet. Run `screener snapshot` first.[/]")
+            raise typer.Exit(code=1)
+    else:
+        day = date.fromisoformat(as_of)
+        if not snapshots.exists(day):
+            console.print(f"[red]No snapshot for {day}.[/]")
+            raise typer.Exit(code=1)
+
+    snapshot_frame = snapshots.read(day)
+    preset_name, weights = config.weights_for(preset)
+
+    history = HistoryStore(layout.history)
+    panel = load_price_panel(history, snapshot_frame["coin_id"].astype(str).tolist(), day)
+    result = run_screen(
+        snapshot_frame,
+        as_of=day,
+        weights=weights,
+        preset=preset_name,
+        universe_config=config.universe,
+        price_panel=panel if not panel.empty else None,
+    )
+
+    classified = universe_filters.classify(
+        snapshot_frame,
+        min_market_cap_usd=config.universe.min_market_cap_usd,
+        min_volume_24h_usd=config.universe.min_volume_24h_usd,
+        min_turnover=config.universe.min_turnover,
+        extra_stablecoin_symbols=frozenset(config.universe.extra_stablecoin_symbols),
+        extra_excluded_coin_ids=frozenset(config.universe.extra_excluded_coin_ids),
+    )
+
+    state = StateStore(layout.portfolio).load()
+    trades = StateStore(layout.portfolio).read_trades()
+    equity = None
+    benchmarks: dict[str, pd.Series[float]] = {}
+    holdings = None
+
+    if state is not None and state.equity_curve:
+        equity = pd.Series(
+            {key: state.equity_curve[key] for key in sorted(state.equity_curve)}, dtype="float64"
+        )
+        equity.index.name = "date"
+        costs = CostModel(fee_bps=portfolio.fee_bps, slippage_bps=portfolio.slippage_bps)
+        prices = {
+            str(coin_id): float(price)
+            for coin_id, price in zip(
+                snapshot_frame["coin_id"].astype(str),
+                snapshot_frame["current_price"].astype("float64"),
+                strict=True,
+            )
+            if price > 0
+        }
+        holdings = state.to_ledger(costs).holdings(prices)
+
+        full_panel = history.price_panel(history.available_coins())
+        if not full_panel.empty:
+
+            def universe_for(signal_date: date) -> pd.DataFrame | None:
+                found = snapshots.read_on_or_before(signal_date)
+                return None if found is None else _investable(found[1], config)
+
+            benchmarks = _build_benchmarks(
+                price_panel=full_panel,
+                universe_for=universe_for,
+                portfolio=portfolio,
+                capital=state.initial_capital,
+                start=equity.index[0],
+                end=equity.index[-1],
+            )
+
+    payload = DashboardData(
+        as_of=day,
+        generated_on=datetime.now(UTC).date(),
+        preset=preset_name,
+        weights=weights,
+        universe_size=len(snapshot_frame),
+        ranking=result.ranking,
+        exclusions=universe_filters.exclusion_summary(classified),
+        starting_capital=state.initial_capital if state else portfolio.initial_capital,
+        equity=equity,
+        benchmarks=benchmarks,
+        holdings=holdings,
+        trades=trades if not trades.empty else None,
+        last_signal_date=state.last_signal_date if state else None,
+        last_rebalance=state.last_rebalance if state else None,
+    )
+
+    destination = output if output is not None else layout.reports_dir / "dashboard.html"
+    path = write_dashboard(payload, destination)
+    size_kb = path.stat().st_size / 1024
+    console.print(
+        f"[green]Dashboard[/] {path} ({size_kb:,.0f} KB, {len(result.ranking)} ranked coins). "
+        "Open it in a browser; it needs no server and makes no network requests."
+    )
 
 
 @app.command()

@@ -62,6 +62,9 @@ jobs:
       - name: Build report
         run: uv run screener report
 
+      - name: Render dashboard
+        run: uv run screener dashboard
+
       # always() so a failure in papertrade or report cannot discard a
       # snapshot that was fetched successfully. The job still reports failure;
       # it just does not throw away the irreplaceable part of the run.

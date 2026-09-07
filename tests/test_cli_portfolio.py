@@ -357,3 +357,71 @@ def test_backtest_report_carries_the_survivorship_banner(
     assert "Survivorship warning" in markdown
     assert "dilution" in markdown
     assert "Equal-weight top 8" in markdown
+
+
+def test_dashboard_renders_before_the_record_starts(portfolio_env: dict[str, Path]) -> None:
+    reports = portfolio_env["root"] / "reports"
+    result = runner.invoke(
+        cli.app,
+        [
+            "dashboard",
+            "-c",
+            str(portfolio_env["screen"]),
+            "-p",
+            str(portfolio_env["portfolio"]),
+            "--data-dir",
+            str(portfolio_env["data"]),
+            "--reports-dir",
+            str(reports),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    html = (reports / "dashboard.html").read_text(encoding="utf-8")
+    assert '"hasRecord":false' in html
+    assert "https://" not in html
+
+
+def test_dashboard_includes_the_record_once_it_exists(portfolio_env: dict[str, Path]) -> None:
+    _papertrade(portfolio_env)
+    reports = portfolio_env["root"] / "reports"
+    result = runner.invoke(
+        cli.app,
+        [
+            "dashboard",
+            "-c",
+            str(portfolio_env["screen"]),
+            "-p",
+            str(portfolio_env["portfolio"]),
+            "--data-dir",
+            str(portfolio_env["data"]),
+            "--reports-dir",
+            str(reports),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    html = (reports / "dashboard.html").read_text(encoding="utf-8")
+    assert '"hasRecord":true' in html
+    assert "entry_top_rank" in html
+
+
+def test_dashboard_needs_a_snapshot(tmp_path: Path) -> None:
+    screen_path = tmp_path / "screen.yaml"
+    screen_path.write_text(SCREEN_YAML)
+    portfolio_path = tmp_path / "portfolio.yaml"
+    portfolio_path.write_text(PORTFOLIO_YAML)
+    result = runner.invoke(
+        cli.app,
+        [
+            "dashboard",
+            "-c",
+            str(screen_path),
+            "-p",
+            str(portfolio_path),
+            "--data-dir",
+            str(tmp_path / "data"),
+            "--reports-dir",
+            str(tmp_path / "reports"),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "No snapshots yet" in result.output
