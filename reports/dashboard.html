@@ -1,0 +1,475 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screener - 2026-09-08</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --plane: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --good: #006300;
+    --critical: #d03b3b;
+    --warning: #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --plane: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --good: #0ca30c;
+      --critical: #d03b3b;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --good: #0ca30c;
+    --critical: #d03b3b;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--plane);
+    color: var(--text-primary);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+
+  header h1 { font-size: 21px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header .sub { color: var(--text-secondary); font-size: 13px; margin: 0; }
+  .banner {
+    margin: 18px 0 0; padding: 10px 13px; border-radius: 8px;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-left: 3px solid var(--warning);
+    color: var(--text-secondary); font-size: 13px;
+  }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; margin: 22px 0 8px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 15px; }
+  .tile .label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .tile .value { font-size: 25px; font-weight: 620; margin-top: 5px; letter-spacing: -0.02em; }
+  .tile .note { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+  .pos { color: var(--good); } .neg { color: var(--critical); }
+
+  section { margin-top: 34px; }
+  section > h2 { font-size: 15px; font-weight: 620; margin: 0 0 3px; }
+  section > .hint { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 13px; }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .filters input, .filters select {
+    font: inherit; padding: 7px 10px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  }
+  .filters input { min-width: 210px; }
+  .filters .count { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+
+  .scroller { overflow-x: auto; }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; }
+  th, td { text-align: right; padding: 6px 7px; white-space: nowrap; }
+  th:first-child, td:first-child, th.l, td.l { text-align: left; }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--surface-1); color: var(--text-secondary);
+    font-weight: 560; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--grid); cursor: pointer; user-select: none;
+  }
+  thead th.nosort { cursor: default; }
+  thead th .arrow { color: var(--muted); font-size: 10px; }
+  tbody tr:nth-child(even) { background: color-mix(in srgb, var(--plane) 55%, transparent); }
+  tbody td { border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  td.coin { font-weight: 550; }
+  td.coin span { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: 12px; }
+
+  /* 2px surface gap between fills rather than a border drawn around them. */
+  td.heat { text-align: center; font-variant-numeric: tabular-nums; font-size: 12px;
+            border-radius: 3px; border-bottom: 2px solid var(--surface-1);
+            border-right: 2px solid var(--surface-1); }
+      .h0 { background: #cde2fb; color: #0b0b0b; }
+      .h1 { background: #9ec5f4; color: #0b0b0b; }
+      .h2 { background: #6da7ec; color: #0b0b0b; }
+      .h3 { background: #3987e5; color: #0b0b0b; }
+      .h4 { background: #256abf; color: #ffffff; }
+      .h5 { background: #184f95; color: #ffffff; }
+      .h6 { background: #0d366b; color: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        .h0 { background: #0d366b; color: #ffffff; }
+        .h1 { background: #184f95; color: #ffffff; }
+        .h2 { background: #256abf; color: #ffffff; }
+        .h3 { background: #3987e5; color: #0b0b0b; }
+        .h4 { background: #6da7ec; color: #0b0b0b; }
+        .h5 { background: #9ec5f4; color: #0b0b0b; }
+        .h6 { background: #cde2fb; color: #0b0b0b; }
+    }
+  }
+  :root[data-theme="dark"] {
+        .h0 { background: #0d366b; color: #ffffff; }
+        .h1 { background: #184f95; color: #ffffff; }
+        .h2 { background: #256abf; color: #ffffff; }
+        .h3 { background: #3987e5; color: #0b0b0b; }
+        .h4 { background: #6da7ec; color: #0b0b0b; }
+        .h5 { background: #9ec5f4; color: #0b0b0b; }
+        .h6 { background: #cde2fb; color: #0b0b0b; }
+  }
+  td.na { color: var(--muted); background: transparent; }
+
+  .bars { display: grid; gap: 7px; }
+  .barrow { display: grid; grid-template-columns: 168px 1fr 62px; gap: 10px; align-items: center; }
+  .barrow .k { color: var(--text-secondary); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+  .barrow .track { background: color-mix(in srgb, var(--grid) 60%, transparent); border-radius: 4px; height: 13px; }
+  .barrow .fill { background: var(--series-1); height: 13px; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .barrow .v { color: var(--text-secondary); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+  .empty { color: var(--text-secondary); font-size: 13px; padding: 22px; text-align: center;
+           border: 1px dashed var(--border); border-radius: 9px; }
+  .legend { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12.5px; color: var(--text-secondary); }
+  .legend i { display: inline-block; width: 11px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .scale { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); margin-top: 11px; }
+  .scale .sw { display: flex; }
+  .scale .sw b { width: 20px; height: 11px; display: block; }
+
+  footer { margin-top: 42px; padding-top: 18px; border-top: 1px solid var(--grid);
+           color: var(--text-secondary); font-size: 12.5px; }
+  footer ul { margin: 8px 0 0; padding-left: 18px; }
+  footer li { margin-bottom: 5px; }
+  .toggle { position: fixed; top: 14px; right: 14px; font: inherit; font-size: 12px;
+            padding: 6px 11px; border-radius: 7px; cursor: pointer;
+            border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); }
+  #tip { position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+         background: var(--surface-1); border: 1px solid var(--border); border-radius: 7px;
+         padding: 7px 10px; font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.14); z-index: 9; }
+</style>
+
+<button class="toggle" id="themeBtn">Theme</button>
+<div id="tip"></div>
+
+<div class="wrap">
+  <header>
+    <h1>Screener - 2026-09-08</h1>
+    <p class="sub">Universe as of <strong>2026-09-08</strong> &middot; preset <strong>balanced</strong> &middot; generated 2026-09-08</p>
+    <div class="banner">A ranking, not a recommendation. These are the coins that score highest on seven measurable properties &mdash; whether that predicts anything is what the paper record exists to find out.</div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section>
+    <h2>Ranking</h2>
+    <p class="hint">Every factor percentile sits beside the score. 1.00 is best in the cross-section, 0.00 worst &mdash; including coins whose data was missing, which score worst rather than being dropped. Click a column to sort.</p>
+    <div class="card">
+      <div class="filters">
+        <input id="q" type="search" placeholder="Filter by name or symbol&hellip;" aria-label="Filter coins">
+        <select id="limit" aria-label="Rows to show">
+          <option value="25">Top 25</option>
+          <option value="50">Top 50</option>
+          <option value="100">Top 100</option>
+          <option value="0">All</option>
+        </select>
+        <span class="count" id="count"></span>
+      </div>
+      <div class="scroller"><table id="rank"><thead></thead><tbody></tbody></table></div>
+      <div class="scale">
+        <span>factor percentile</span>
+        <span class="sw" id="scaleSw"></span>
+        <span>0.00 worst &rarr; 1.00 best</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Paper trading record</h2>
+    <p class="hint" id="recordHint"></p>
+    <div class="card" id="recordCard"></div>
+  </section>
+
+  <section id="holdingsSection" hidden>
+    <h2>Holdings</h2>
+    <div class="card"><div class="scroller"><table id="holdings"><thead></thead><tbody></tbody></table></div></div>
+  </section>
+
+  <section id="tradesSection" hidden>
+    <h2>Recent trades</h2>
+    <p class="hint">Append-only. Every row records the rank that triggered it and what it cost.</p>
+    <div class="card"><div class="scroller"><table id="trades"><thead></thead><tbody></tbody></table></div></div>
+  </section>
+
+  <section>
+    <h2>What was filtered out</h2>
+    <p class="hint">Applied when the snapshot is read, not when it is written &mdash; so changing a floor re-screens every stored snapshot without refetching.</p>
+    <div class="card"><div class="bars" id="excl"></div></div>
+  </section>
+
+  <section>
+    <h2>Active factor weights</h2>
+    <p class="hint">All weights positive and summing to 1. Penalties (volatility, size tilt) carry their sign in the factor's direction, not in a negative weight.</p>
+    <div class="card"><div class="bars" id="weights"></div></div>
+  </section>
+
+  <footer>
+    <strong>Read this before trusting any number above.</strong>
+    <ul>
+      <li>This is a paper-trading research tool. It never places an order and holds no exchange credentials.</li>
+      <li>A forward record under roughly six months cannot separate edge from noise. The sample size is printed beside every statistic for that reason.</li>
+      <li>Slippage is a flat 30bps per side, not a modelled order book &mdash; generous for large caps, optimistic for small ones.</li>
+      <li>Reported 24h volume includes wash trading on some venues, which flatters the liquidity factor for coins listed on the worst offenders.</li>
+      <li>Any backtest built from this universe is survivorship-biased: it cannot see coins that died before the snapshot was taken.</li>
+    </ul>
+  </footer>
+</div>
+
+<script type="application/json" id="data">{"asOf":"2026-09-08","benchmarks":{"Buy and hold BTC":[{"d":"2026-09-08","v":1000.0}],"Buy and hold ETH":[{"d":"2026-09-08","v":1000.0}],"Equal-weight top 8":[{"d":"2026-09-08","v":1000.0}]},"equity":[{"d":"2026-09-08","v":996.0927009182245}],"exclusions":[{"coins":154,"reason":"below_market_cap_floor"},{"coins":20,"reason":"stablecoin_listed"},{"coins":19,"reason":"stablecoin_heuristic"},{"coins":7,"reason":"below_turnover_floor"},{"coins":6,"reason":"below_volume_floor"},{"coins":3,"reason":"pegged_commodity"}],"factors":["dilution","liquidity","momentum_200d","momentum_30d","size_tilt","trend_health","volatility"],"generatedOn":"2026-09-08","hasRecord":true,"holdings":[{"cost":122.50000000000001,"id":"aave","opened":"2026-09-08","pnl":-0.48841238522196306,"price":130.67,"units":0.9337383302577337,"value":122.01158761477805},{"cost":122.50000000000001,"id":"arbitrum","opened":"2026-09-08","pnl":-0.48841238522194885,"price":0.171373,"units":711.96505642533,"value":122.01158761477807},{"cost":122.50000000000001,"id":"chainlink","opened":"2026-09-08","pnl":-0.48841238522194885,"price":12.65,"units":9.64518479168206,"value":122.01158761477807},{"cost":122.5,"id":"ethena","opened":"2026-09-08","pnl":-0.48841238522193464,"price":0.162183,"units":752.3081186978787,"value":122.01158761477807},{"cost":122.50000000000003,"id":"lighter","opened":"2026-09-08","pnl":-0.48841238522194885,"price":4.73,"units":25.795261652172954,"value":122.01158761477808},{"cost":122.50000000000003,"id":"okb","opened":"2026-09-08","pnl":-0.48841238522193464,"price":115.52,"units":1.0561944911251566,"value":122.0115876147781},{"cost":122.50000000000003,"id":"pump-fun","opened":"2026-09-08","pnl":-0.48841238522196306,"price":0.00424955,"units":28711.648907479157,"value":122.01158761477807},{"cost":122.50000000000001,"id":"zcash","opened":"2026-09-08","pnl":-0.48841238522194885,"price":1130.41,"units":0.10793569378789825,"value":122.01158761477807}],"lastRebalance":"2026-09-08","lastSignalDate":"2026-09-07","preset":"balanced","rows":[{"id":"arbitrum","mcap":1144608715.0,"name":"Arbitrum","pct":{"dilution":0.5,"liquidity":1.0,"momentum_200d":0.85,"momentum_30d":1.0,"size_tilt":0.975,"trend_health":0.2,"volatility":0.025},"price":0.171373,"rank":1,"score":67.38,"sym":"ARB"},{"id":"lighter","mcap":1181344405.0,"name":"Lighter","pct":{"dilution":0.0333,"liquidity":0.75,"momentum_200d":0.975,"momentum_30d":0.95,"size_tilt":0.95,"trend_health":0.875,"volatility":0.1},"price":4.73,"rank":2,"score":65.12,"sym":"LIT"},{"id":"ethena","mcap":1636929375.0,"name":"Ethena","pct":{"dilution":0.5333,"liquidity":0.95,"momentum_200d":0.75,"momentum_30d":0.925,"size_tilt":0.85,"trend_health":0.25,"volatility":0.05},"price":0.162183,"rank":3,"score":63.75,"sym":"ENA"},{"id":"pump-fun","mcap":1678621160.0,"name":"Pump.fun","pct":{"dilution":0.2,"liquidity":0.875,"momentum_200d":0.9,"momentum_30d":0.875,"size_tilt":0.8,"trend_health":0.75,"volatility":0.0},"price":0.00424955,"rank":4,"score":62.62,"sym":"PUMP"},{"id":"okb","mcap":2425986286.0,"name":"OKB","pct":{"dilution":0.9833,"liquidity":0.15,"momentum_200d":0.725,"momentum_30d":0.35,"size_tilt":0.575,"trend_health":0.8,"volatility":0.875},"price":115.52,"rank":5,"score":61.75,"sym":"OKB"},{"id":"uniswap","mcap":4400114018.0,"name":"Uniswap","pct":{"dilution":0.4,"liquidity":0.85,"momentum_200d":0.875,"momentum_30d":0.9,"size_tilt":0.375,"trend_health":0.425,"volatility":0.15},"price":7.06,"rank":6,"score":60.12,"sym":"UNI"},{"id":"zcash","mcap":19131556628.0,"name":"Zcash","pct":{"dilution":0.6667,"liquidity":0.4,"momentum_200d":1.0,"momentum_30d":0.975,"size_tilt":0.15,"trend_health":0.675,"volatility":0.075},"price":1130.41,"rank":7,"score":59.87,"sym":"ZEC"},{"id":"aave","mcap":2015841218.0,"name":"Aave","pct":{"dilution":0.9333,"liquidity":0.675,"momentum_200d":0.375,"momentum_30d":0.75,"size_tilt":0.65,"trend_health":0.5,"volatility":0.2},"price":130.67,"rank":8,"score":59.25,"sym":"AAVE"},{"id":"chainlink","mcap":9463869641.0,"name":"Chainlink","pct":{"dilution":0.6,"liquidity":0.525,"momentum_200d":0.625,"momentum_30d":0.8,"size_tilt":0.25,"trend_health":0.575,"volatility":0.525},"price":12.65,"rank":9,"score":58.38,"sym":"LINK"},{"id":"hyperliquid","mcap":18694099515.0,"name":"Hyperliquid","pct":{"dilution":0.0,"liquidity":0.575,"momentum_200d":0.95,"momentum_30d":0.85,"size_tilt":0.175,"trend_health":0.975,"volatility":0.35},"price":84.04,"rank":10,"score":56.62,"sym":"HYPE"},{"id":"litecoin","mcap":4301516127.0,"name":"Litecoin","pct":{"dilution":0.8333,"liquidity":0.775,"momentum_200d":0.4,"momentum_30d":0.25,"size_tilt":0.4,"trend_health":0.35,"volatility":0.8},"price":55.44,"rank":11,"score":54.62,"sym":"LTC"},{"id":"polkadot","mcap":1815426888.0,"name":"Polkadot","pct":{"dilution":0.7,"liquidity":0.9,"momentum_200d":0.175,"momentum_30d":0.575,"size_tilt":0.7,"trend_health":0.025,"volatility":0.575},"price":1.067,"rank":12,"score":54.0,"sym":"DOT"},{"id":"worldcoin-wld","mcap":1738389213.0,"name":"Worldcoin","pct":{"dilution":0.1667,"liquidity":0.975,"momentum_200d":0.6,"momentum_30d":0.825,"size_tilt":0.75,"trend_health":0.05,"volatility":0.225},"price":0.472727,"rank":13,"score":54.0,"sym":"WLD"},{"id":"aster-2","mcap":2078314749.0,"name":"Aster","pct":{"dilution":0.1333,"liquidity":0.7,"momentum_200d":0.425,"momentum_30d":0.525,"size_tilt":0.6,"trend_health":0.6,"volatility":0.825},"price":0.768528,"rank":14,"score":53.75,"sym":"ASTER"},{"id":"pepe","mcap":1520141069.0,"name":"Pepe","pct":{"dilution":0.9833,"liquidity":0.825,"momentum_200d":0.225,"momentum_30d":0.45,"size_tilt":0.875,"trend_health":0.325,"volatility":0.125},"price":3.61e-06,"rank":15,"score":53.38,"sym":"PEPE"},{"id":"near","mcap":3010902372.0,"name":"NEAR Protocol","pct":{"dilution":0.0,"liquidity":0.725,"momentum_200d":0.925,"momentum_30d":0.725,"size_tilt":0.525,"trend_health":0.275,"volatility":0.375},"price":2.31,"rank":16,"score":52.87,"sym":"NEAR"},{"id":"htx-dao","mcap":1515550124.0,"name":"HTX DAO","pct":{"dilution":0.8,"liquidity":0.3,"momentum_200d":0.35,"momentum_30d":0.0,"size_tilt":0.9,"trend_health":0.725,"volatility":0.975},"price":1.69e-06,"rank":17,"score":52.62,"sym":"HTX"},{"id":"internet-computer","mcap":1711880009.0,"name":"Internet Computer","pct":{"dilution":0.0,"liquidity":0.6,"momentum_200d":0.65,"momentum_30d":0.7,"size_tilt":0.775,"trend_health":0.0,"volatility":0.675},"price":3.08,"rank":18,"score":50.63,"sym":"ICP"},{"id":"morpho","mcap":1649922649.0,"name":"Morpho","pct":{"dilution":0.5667,"liquidity":0.2,"momentum_200d":0.775,"momentum_30d":0.4,"size_tilt":0.825,"trend_health":0.85,"volatility":0.175},"price":2.39,"rank":19,"score":50.5,"sym":"MORPHO"},{"id":"bitcoin","mcap":1574011640565.0,"name":"Bitcoin","pct":{"dilution":0.8667,"liquidity":0.175,"momentum_200d":0.45,"momentum_30d":0.275,"size_tilt":0.0,"trend_health":0.9,"volatility":0.9},"price":78381.0,"rank":20,"score":50.38,"sym":"BTC"},{"id":"whitebit","mcap":9250891226.0,"name":"WhiteBIT Coin","pct":{"dilution":0.0667,"liquidity":0.0,"momentum_200d":0.8,"momentum_30d":0.675,"size_tilt":0.275,"trend_health":1.0,"volatility":0.725},"price":78.43,"rank":21,"score":50.13,"sym":"WBT"},{"id":"monero","mcap":9853811527.0,"name":"Monero","pct":{"dilution":0.0,"liquidity":0.075,"momentum_200d":0.825,"momentum_30d":0.65,"size_tilt":0.225,"trend_health":0.925,"volatility":0.775},"price":523.96,"rank":22,"score":49.63,"sym":"XMR"},{"id":"bittensor","mcap":2428100147.0,"name":"Bittensor","pct":{"dilution":0.2667,"liquidity":0.65,"momentum_200d":0.675,"momentum_30d":0.3,"size_tilt":0.55,"trend_health":0.625,"volatility":0.425},"price":253.01,"rank":23,"score":48.0,"sym":"TAO"},{"id":"binancecoin","mcap":100507907734.0,"name":"BNB","pct":{"dilution":0.4667,"liquidity":0.05,"momentum_200d":0.55,"momentum_30d":0.425,"size_tilt":0.05,"trend_health":0.825,"volatility":0.95},"price":754.76,"rank":24,"score":47.5,"sym":"BNB"},{"id":"solana","mcap":60372187090.0,"name":"Solana","pct":{"dilution":0.0,"liquidity":0.45,"momentum_200d":0.525,"momentum_30d":0.625,"size_tilt":0.1,"trend_health":0.65,"volatility":0.75},"price":103.0,"rank":25,"score":45.88,"sym":"SOL"},{"id":"ethereum-classic","mcap":1297397489.0,"name":"Ethereum Classic","pct":{"dilution":0.6333,"liquidity":0.475,"momentum_200d":0.1,"momentum_30d":0.475,"size_tilt":0.925,"trend_health":0.075,"volatility":0.475},"price":8.21,"rank":26,"score":44.75,"sym":"ETC"},{"id":"avalanche-2","mcap":3473686595.0,"name":"Avalanche","pct":{"dilution":0.3667,"liquidity":0.8,"momentum_200d":0.25,"momentum_30d":0.375,"size_tilt":0.45,"trend_health":0.1,"volatility":0.7},"price":8.05,"rank":27,"score":44.75,"sym":"AVAX"},{"id":"mantle","mcap":2040776000.0,"name":"Mantle","pct":{"dilution":0.3333,"liquidity":0.125,"momentum_200d":0.05,"momentum_30d":0.775,"size_tilt":0.625,"trend_health":0.525,"volatility":0.625},"price":0.617853,"rank":28,"score":44.0,"sym":"MNT"},{"id":"ethereum","mcap":302196140899.0,"name":"Ethereum","pct":{"dilution":0.0,"liquidity":0.35,"momentum_200d":0.575,"momentum_30d":0.55,"size_tilt":0.025,"trend_health":0.775,"volatility":0.6},"price":2476.41,"rank":29,"score":41.87,"sym":"ETH"},{"id":"ondo-finance","mcap":1831996633.0,"name":"Ondo","pct":{"dilution":0.3,"liquidity":0.625,"momentum_200d":0.7,"momentum_30d":0.075,"size_tilt":0.675,"trend_health":0.475,"volatility":0.275},"price":0.376187,"rank":30,"score":41.5,"sym":"ONDO"},{"id":"ripple","mcap":87179530967.0,"name":"XRP","pct":{"dilution":0.4333,"liquidity":0.225,"momentum_200d":0.325,"momentum_30d":0.6,"size_tilt":0.075,"trend_health":0.7,"volatility":0.45},"price":1.39,"rank":31,"score":41.25,"sym":"XRP"},{"id":"hedera-hashgraph","mcap":3508506307.0,"name":"Hedera","pct":{"dilution":0.7667,"liquidity":0.275,"momentum_200d":0.125,"momentum_30d":0.125,"size_tilt":0.425,"trend_health":0.375,"volatility":0.85},"price":0.080047,"rank":32,"score":40.75,"sym":"HBAR"},{"id":"sui","mcap":3351741652.0,"name":"Sui","pct":{"dilution":0.2333,"liquidity":0.925,"momentum_200d":0.2,"momentum_30d":0.2,"size_tilt":0.475,"trend_health":0.4,"volatility":0.5},"price":0.818081,"rank":33,"score":40.63,"sym":"SUI"},{"id":"dogecoin","mcap":13909315807.0,"name":"Dogecoin","pct":{"dilution":0.0,"liquidity":0.55,"momentum_200d":0.275,"momentum_30d":0.5,"size_tilt":0.2,"trend_health":0.3,"volatility":0.55},"price":0.089262,"rank":34,"score":35.63,"sym":"DOGE"},{"id":"polygon-ecosystem-token","mcap":1026366922.0,"name":"POL (ex-MATIC)","pct":{"dilution":0.0,"liquidity":0.425,"momentum_200d":0.3,"momentum_30d":0.325,"size_tilt":1.0,"trend_health":0.225,"volatility":0.325},"price":0.09583,"rank":35,"score":34.5,"sym":"POL"},{"id":"tron","mcap":32113911130.0,"name":"TRON","pct":{"dilution":0.0,"liquidity":0.025,"momentum_200d":0.5,"momentum_30d":0.025,"size_tilt":0.125,"trend_health":0.95,"volatility":1.0},"price":0.33826,"rank":36,"score":34.12,"sym":"TRX"},{"id":"stellar","mcap":6611207713.0,"name":"Stellar","pct":{"dilution":0.0,"liquidity":0.325,"momentum_200d":0.475,"momentum_30d":0.15,"size_tilt":0.325,"trend_health":0.55,"volatility":0.65},"price":0.18991,"rank":37,"score":33.5,"sym":"XLM"},{"id":"bitcoin-cash","mcap":5139883481.0,"name":"Bitcoin Cash","pct":{"dilution":0.9,"liquidity":0.375,"momentum_200d":0.0,"momentum_30d":0.225,"size_tilt":0.35,"trend_health":0.15,"volatility":0.3},"price":255.9,"rank":38,"score":33.12,"sym":"BCH"},{"id":"cardano","mcap":8152809164.0,"name":"Cardano","pct":{"dilution":0.7333,"liquidity":0.5,"momentum_200d":0.075,"momentum_30d":0.1,"size_tilt":0.3,"trend_health":0.175,"volatility":0.4},"price":0.217357,"rank":39,"score":32.38,"sym":"ADA"},{"id":"world-liberty-financial","mcap":1777427988.0,"name":"World Liberty Financial","pct":{"dilution":0.1,"liquidity":0.1,"momentum_200d":0.025,"momentum_30d":0.05,"size_tilt":0.725,"trend_health":0.45,"volatility":0.925},"price":0.055937,"rank":40,"score":30.0,"sym":"WLFI"},{"id":"shiba-inu","mcap":3198098170.0,"name":"Shiba Inu","pct":{"dilution":0.0,"liquidity":0.25,"momentum_200d":0.15,"momentum_30d":0.175,"size_tilt":0.5,"trend_health":0.125,"volatility":0.25},"price":5.43e-06,"rank":41,"score":19.5,"sym":"SHIB"}],"startingCapital":1000.0,"stats":{"costPct":0.003907299081775559,"costUsd":3.9072990817755593,"equity":996.0927009182245,"maxDrawdown":0.0,"observations":1,"sharpe":NaN,"thin":true,"totalReturn":NaN},"trades":[{"action":"buy","cost":0.48841238522194197,"date":"2026-09-08","gross":122.3776223776224,"id":"arbitrum","price":0.1718871189999999,"rank":1,"reason":"entry_top_rank"},{"action":"buy","cost":0.48841238522195457,"date":"2026-09-08","gross":122.3776223776224,"id":"pump-fun","price":0.00426229865,"rank":2,"reason":"entry_top_rank"},{"action":"buy","cost":0.4884123852219511,"date":"2026-09-08","gross":122.3776223776224,"id":"zcash","price":1133.80123,"rank":3,"reason":"entry_top_rank"},{"action":"buy","cost":0.4884123852219377,"date":"2026-09-08","gross":122.37762237762236,"id":"ethena","price":0.1626695489999999,"rank":4,"reason":"entry_top_rank"},{"action":"buy","cost":0.4884123852219375,"date":"2026-09-08","gross":122.3776223776224,"id":"lighter","price":4.74419,"rank":5,"reason":"entry_top_rank"},{"action":"buy","cost":0.48841238522194297,"date":"2026-09-08","gross":122.3776223776224,"id":"chainlink","price":12.68795,"rank":6,"reason":"entry_top_rank"},{"action":"buy","cost":0.48841238522195557,"date":"2026-09-08","gross":122.3776223776224,"id":"aave","price":131.06201,"rank":7,"reason":"entry_top_rank"},{"action":"buy","cost":0.4884123852219381,"date":"2026-09-08","gross":122.3776223776224,"id":"okb","price":115.86655999999998,"rank":8,"reason":"entry_top_rank"}],"universeSize":250,"weights":{"dilution":0.15,"liquidity":0.15,"momentum_200d":0.15,"momentum_30d":0.2,"size_tilt":0.1,"trend_health":0.1,"volatility":0.15}}</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById("data").textContent);
+  const BINS = 7;
+  const tip = document.getElementById("tip");
+
+  const fmtUsd = (v, dp = 2) => (v < 0 ? "-$" : "$") +
+      Math.abs(v).toLocaleString("en-US", {minimumFractionDigits: dp, maximumFractionDigits: dp});
+  const fmtPct = (v, sign) => (v === null || v === undefined || Number.isNaN(v)) ? "n/a"
+      : (sign && v > 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
+  const fmtCap = v => v === null ? "n/a"
+      : v >= 1e9 ? "$" + (v / 1e9).toFixed(1) + "b"
+      : v >= 1e6 ? "$" + (v / 1e6).toFixed(0) + "m" : "$" + v.toFixed(0);
+  const fmtPrice = v => v === null ? "n/a"
+      : v >= 100 ? "$" + v.toFixed(0) : v >= 1 ? "$" + v.toFixed(2)
+      : v >= 0.01 ? "$" + v.toFixed(4) : "$" + v.toExponential(2);
+  const title = s => s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const SHORT = {momentum_7d: "Mom 7d", momentum_30d: "Mom 30d", momentum_200d: "Mom 200d",
+                 drawdown_depth: "Drawdown", trend_health: "Trend", size_tilt: "Size",
+                 volatility: "Vol", liquidity: "Liq", dilution: "Dilution"};
+  const shortName = f => SHORT[f] || title(f);
+
+  function showTip(html, ev) {
+    tip.innerHTML = html; tip.style.opacity = "1";
+    const r = tip.getBoundingClientRect();
+    let x = ev.clientX + 14, y = ev.clientY - r.height - 10;
+    if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+    if (y < 8) y = ev.clientY + 18;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  const hideTip = () => { tip.style.opacity = "0"; };
+
+  /* ---------------------------------------------------------------- tiles */
+  const s = D.stats || {};
+  const tiles = [
+    {label: "Investable universe", value: String(D.rows.length),
+     note: "of " + D.universeSize + " coins pulled"},
+  ];
+  if (D.hasRecord) {
+    const ret = s.totalReturn;
+    tiles.push({label: "Portfolio value", value: fmtUsd(s.equity),
+                note: "from " + fmtUsd(D.startingCapital) + " at start"});
+    tiles.push({label: "Total return", value: fmtPct(ret, true),
+                cls: ret >= 0 ? "pos" : "neg",
+                note: s.observations + " daily observations" + (s.thin ? " — too few to mean much" : "")});
+    tiles.push({label: "Max drawdown", value: fmtPct(s.maxDrawdown, false)});
+    tiles.push({label: "Costs paid", value: fmtUsd(s.costUsd),
+                note: fmtPct(s.costPct, false) + " of starting capital"});
+  } else {
+    tiles.push({label: "Portfolio value", value: "—", note: "record not started"});
+    tiles.push({label: "Next step", value: "2nd snapshot",
+                note: "a signal dated t fills at t+1, so one snapshot cannot trade"});
+  }
+  document.getElementById("tiles").innerHTML = tiles.map(t =>
+    `<div class="tile"><div class="label">${t.label}</div>` +
+    `<div class="value ${t.cls || ""}">${t.value}</div>` +
+    (t.note ? `<div class="note">${t.note}</div>` : "") + `</div>`).join("");
+
+  /* -------------------------------------------------------------- ranking */
+  const F = D.factors;
+  const cols = [
+    {k: "rank", t: "#", num: true},
+    {k: "coin", t: "Coin", num: false},
+    {k: "score", t: "Score", num: true},
+    ...F.map(f => ({k: "pct:" + f, t: shortName(f), num: true, heat: true})),
+    {k: "price", t: "Price", num: true},
+    {k: "mcap", t: "Mkt cap", num: true},
+  ];
+  let sortKey = "rank", sortAsc = true;
+
+  const getVal = (r, k) => k === "coin" ? r.name.toLowerCase()
+    : k.startsWith("pct:") ? (r.pct[k.slice(4)] ?? -1) : r[k];
+
+  function heatClass(v) {
+    if (v === null || v === undefined) return "na";
+    return "h" + Math.min(BINS - 1, Math.max(0, Math.floor(v * BINS)));
+  }
+
+  function render() {
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const lim = parseInt(document.getElementById("limit").value, 10);
+    let rows = D.rows.filter(r => !q || r.name.toLowerCase().includes(q) || r.sym.toLowerCase().includes(q) || r.id.includes(q));
+    rows.sort((a, b) => {
+      const x = getVal(a, sortKey), y = getVal(b, sortKey);
+      const c = typeof x === "string" ? x.localeCompare(y) : x - y;
+      return sortAsc ? c : -c;
+    });
+    const shown = lim > 0 ? rows.slice(0, lim) : rows;
+    document.getElementById("count").textContent =
+      shown.length + " of " + D.rows.length + " shown";
+
+    document.querySelector("#rank thead").innerHTML = "<tr>" + cols.map(c =>
+      `<th class="${c.num ? "" : "l"}" data-k="${c.k}">${c.t}` +
+      (sortKey === c.k ? ` <span class="arrow">${sortAsc ? "▲" : "▼"}</span>` : "") +
+      `</th>`).join("") + "</tr>";
+
+    document.querySelector("#rank tbody").innerHTML = shown.map(r => "<tr>" +
+      `<td>${r.rank}</td>` +
+      `<td class="l coin">${r.name}<span>${r.sym}</span></td>` +
+      `<td>${r.score.toFixed(1)}</td>` +
+      F.map(f => {
+        const v = r.pct[f];
+        return `<td class="heat ${heatClass(v)}" data-f="${f}" data-c="${r.name}">` +
+               `${v === null ? "–" : v.toFixed(2)}</td>`;
+      }).join("") +
+      `<td>${fmtPrice(r.price)}</td><td>${fmtCap(r.mcap)}</td></tr>`).join("");
+
+    document.querySelectorAll("#rank thead th").forEach(th => th.onclick = () => {
+      const k = th.dataset.k;
+      if (sortKey === k) sortAsc = !sortAsc;
+      else { sortKey = k; sortAsc = (k === "rank" || k === "coin"); }
+      render();
+    });
+    document.querySelectorAll("#rank td.heat").forEach(td => {
+      td.onmousemove = e => showTip(
+        `<strong>${td.dataset.c}</strong><br>${title(td.dataset.f)}: ${td.textContent}` +
+        `<br><span style="color:var(--muted)">weight ${(D.weights[td.dataset.f] * 100).toFixed(0)}%</span>`, e);
+      td.onmouseleave = hideTip;
+    });
+  }
+  document.getElementById("q").oninput = render;
+  document.getElementById("limit").onchange = render;
+
+  document.getElementById("scaleSw").innerHTML =
+    Array.from({length: BINS}, (_, i) => `<b class="h${i}"></b>`).join("");
+
+  /* ------------------------------------------------------------ equity */
+  const hint = document.getElementById("recordHint");
+  const card = document.getElementById("recordCard");
+  if (!D.hasRecord) {
+    hint.textContent = "Nothing to plot yet.";
+    card.innerHTML = `<div class="empty">The forward record begins once two snapshots exist.` +
+      `<br>A signal from a snapshot dated <em>t</em> may only be filled at a price dated <em>t+1</em> or later,` +
+      ` so the first run after the first snapshot is always a no-op.</div>`;
+  } else {
+    hint.textContent = "Marked daily, not per rebalance, so a drawdown that opened and closed inside a week still counts.";
+    const series = [{name: "Strategy", pts: D.equity, c: "var(--series-1)"}];
+    const bn = Object.keys(D.benchmarks);
+    const cs = ["var(--series-2)", "var(--series-3)", "var(--series-4)"];
+    bn.forEach((n, i) => series.push({name: n, pts: D.benchmarks[n], c: cs[i % cs.length]}));
+
+    const W = 1080, H = 300, P = {t: 12, r: 16, b: 26, l: 54};
+    const all = series.flatMap(s => s.pts);
+    const xs = [...new Set(all.map(p => p.d))].sort();
+    const lo = Math.min(...all.map(p => p.v)), hi = Math.max(...all.map(p => p.v));
+    const pad = (hi - lo) * 0.08 || 1;
+    const y0 = lo - pad, y1 = hi + pad;
+    const X = d => P.l + (xs.indexOf(d) / Math.max(1, xs.length - 1)) * (W - P.l - P.r);
+    const Y = v => P.t + (1 - (v - y0) / (y1 - y0)) * (H - P.t - P.b);
+
+    const ticks = Array.from({length: 5}, (_, i) => y0 + (i / 4) * (y1 - y0));
+    const grid = ticks.map(v =>
+      `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>` +
+      `<text x="${P.l - 8}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--muted)">$${v.toFixed(0)}</text>`).join("");
+    const paths = series.map(s =>
+      `<path d="${s.pts.map((p, i) => (i ? "L" : "M") + X(p.d).toFixed(1) + " " + Y(p.v).toFixed(1)).join(" ")}"` +
+      ` fill="none" stroke="${s.c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`).join("");
+    const endLabels = series.map(s => {
+      const p = s.pts[s.pts.length - 1];
+      return `<circle cx="${X(p.d).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3.5" fill="${s.c}" stroke="var(--surface-1)" stroke-width="2"/>`;
+    }).join("");
+    const xl = [xs[0], xs[xs.length - 1]].map((d, i) =>
+      `<text x="${X(d).toFixed(1)}" y="${H - 6}" text-anchor="${i ? "end" : "start"}" font-size="11" fill="var(--muted)">${d}</text>`).join("");
+
+    card.innerHTML =
+      `<div class="legend">` + series.map(s =>
+        `<span><i style="background:${s.c}"></i>${s.name}</span>`).join("") + `</div>` +
+      `<div class="scroller"><svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Equity curve versus benchmarks">` +
+      grid +
+      `<line x1="${P.l}" x2="${W - P.r}" y1="${H - P.b}" y2="${H - P.b}" stroke="var(--axis)" stroke-width="1"/>` +
+      paths + endLabels + xl + `</svg></div>`;
+
+    if (D.holdings.length) {
+      const hs = document.getElementById("holdingsSection");
+      hs.hidden = false;
+      document.querySelector("#holdings thead").innerHTML =
+        "<tr><th class='l nosort'>Coin</th><th class='nosort'>Units</th><th class='nosort'>Price</th>" +
+        "<th class='nosort'>Value</th><th class='nosort'>Cost</th><th class='nosort'>P&amp;L</th><th class='nosort'>Opened</th></tr>";
+      document.querySelector("#holdings tbody").innerHTML = D.holdings.map(h =>
+        `<tr><td class="l coin">${h.id}</td><td>${h.units.toPrecision(4)}</td>` +
+        `<td>${fmtPrice(h.price)}</td><td>${fmtUsd(h.value)}</td><td>${fmtUsd(h.cost)}</td>` +
+        `<td class="${h.pnl >= 0 ? "pos" : "neg"}">${(h.pnl >= 0 ? "+" : "") + fmtUsd(h.pnl)}</td>` +
+        `<td>${h.opened}</td></tr>`).join("");
+    }
+    if (D.trades.length) {
+      const ts = document.getElementById("tradesSection");
+      ts.hidden = false;
+      document.querySelector("#trades thead").innerHTML =
+        "<tr><th class='l nosort'>Date</th><th class='l nosort'>Action</th><th class='l nosort'>Coin</th>" +
+        "<th class='nosort'>Rank</th><th class='nosort'>Fill</th><th class='nosort'>Gross</th>" +
+        "<th class='nosort'>Cost</th><th class='l nosort'>Reason</th></tr>";
+      document.querySelector("#trades tbody").innerHTML = D.trades.slice().reverse().map(t =>
+        `<tr><td class="l">${t.date}</td><td class="l">${t.action}</td><td class="l coin">${t.id}</td>` +
+        `<td>${t.rank ?? "–"}</td><td>${fmtPrice(t.price)}</td><td>${fmtUsd(t.gross)}</td>` +
+        `<td>${fmtUsd(t.cost)}</td><td class="l">${t.reason.replace(/_/g, " ")}</td></tr>`).join("");
+    }
+  }
+
+  /* -------------------------------------------------------------- bars */
+  function bars(el, items, fmt) {
+    const max = Math.max(...items.map(i => i.v), 1e-9);
+    el.innerHTML = items.map(i =>
+      `<div class="barrow"><div class="k">${i.k}</div>` +
+      `<div class="track"><div class="fill" style="width:${(i.v / max * 100).toFixed(1)}%"></div></div>` +
+      `<div class="v">${fmt(i.v)}</div></div>`).join("");
+  }
+  bars(document.getElementById("excl"),
+       D.exclusions.map(e => ({k: title(e.reason), v: e.coins})), v => String(v));
+  bars(document.getElementById("weights"),
+       D.factors.map(f => ({k: title(f), v: D.weights[f]})), v => (v * 100).toFixed(0) + "%");
+
+  /* ------------------------------------------------------------- theme */
+  const btn = document.getElementById("themeBtn");
+  btn.onclick = () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const next = cur === "dark" ? "light" : cur === "light" ? "dark"
+      : (matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "dark");
+    document.documentElement.setAttribute("data-theme", next);
+  };
+
+  render();
+})();
+</script>
