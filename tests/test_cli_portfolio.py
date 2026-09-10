@@ -167,6 +167,56 @@ def test_a_second_run_on_the_same_day_is_not_due(portfolio_env: dict[str, Path])
     assert "No rebalance due" in result.output
 
 
+def test_a_non_rebalance_day_still_marks_the_book(portfolio_env: dict[str, Path]) -> None:
+    """Marking is daily; trading is weekly. Gating the mark on the trade would
+    leave the equity curve with a point only on rebalance days - which is what
+    the live run actually did before this was fixed."""
+    _papertrade(portfolio_env)
+    state_path = portfolio_env["data"] / "portfolio" / "state.json"
+    before = json.loads(state_path.read_text())
+    trades_before = (portfolio_env["data"] / "portfolio" / "trades.csv").read_text()
+
+    # A later snapshot at moved prices, still inside the weekly band.
+    snapshots = SnapshotStore(portfolio_env["data"] / "snapshots")
+    later_day = FILL_DAY + timedelta(days=2)
+    frame = snapshots.read(FILL_DAY)
+    frame["current_price"] = pd.to_numeric(frame["current_price"], errors="coerce") * 1.2
+    snapshots.write(frame, later_day, source="fixture")
+
+    result = _papertrade(portfolio_env)
+    assert result.exit_code == 0, result.output
+    assert "marked the book instead" in result.output
+
+    after = json.loads(state_path.read_text())
+    # A new daily mark landed, and it moved with prices.
+    assert later_day.isoformat() in after["equity_curve"]
+    assert (
+        after["equity_curve"][later_day.isoformat()] > before["equity_curve"][FILL_DAY.isoformat()]
+    )
+    # But nothing traded: same positions, same cash, same trade log.
+    assert after["cash"] == before["cash"]
+    assert len(after["positions"]) == len(before["positions"])
+    assert (portfolio_env["data"] / "portfolio" / "trades.csv").read_text() == trades_before
+
+
+def test_a_dry_run_on_a_non_rebalance_day_writes_nothing(
+    portfolio_env: dict[str, Path],
+) -> None:
+    _papertrade(portfolio_env)
+    state_path = portfolio_env["data"] / "portfolio" / "state.json"
+    before = state_path.read_text()
+
+    snapshots = SnapshotStore(portfolio_env["data"] / "snapshots")
+    frame = snapshots.read(FILL_DAY)
+    snapshots.write(frame, FILL_DAY + timedelta(days=2), source="fixture")
+
+    result = _papertrade(portfolio_env, "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert "Dry run" in result.output
+    # The real assertion: a dry run on a quiet day must not persist a mark.
+    assert state_path.read_text() == before
+
+
 def test_force_overrides_the_cadence(portfolio_env: dict[str, Path]) -> None:
     _papertrade(portfolio_env)
     result = _papertrade(portfolio_env, "--force")

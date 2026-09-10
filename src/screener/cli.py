@@ -725,23 +725,6 @@ def papertrade(
         )
         state.config_fingerprint = fingerprint
 
-    if not force and not is_due(execution_date, state.last_rebalance, Cadence(portfolio.rebalance)):
-        console.print(
-            f"No rebalance due: last was {state.last_rebalance}, cadence is "
-            f"{portfolio.rebalance}. Pass --force to override."
-        )
-        raise typer.Exit(code=0)
-
-    history = HistoryStore(layout.history)
-    panel = load_price_panel(history, signal_snapshot["coin_id"].astype(str).tolist(), signal_date)
-    ranking = _rank_snapshot(
-        signal_snapshot,
-        as_of=signal_date,
-        config=config,
-        preset=preset,
-        price_panel=panel if not panel.empty else None,
-    )
-
     prices = {
         str(coin_id): float(price)
         for coin_id, price in zip(
@@ -754,9 +737,12 @@ def papertrade(
 
     costs = CostModel(fee_bps=portfolio.fee_bps, slippage_bps=portfolio.slippage_bps)
     ledger = state.to_ledger(costs)
+    history = HistoryStore(layout.history)
 
-    # Mark the book every day since the last run before trading. Holdings were
-    # constant over that window, so this is the true daily curve, not a sample.
+    # Mark the book BEFORE deciding whether to trade. Marking is a daily job and
+    # trading is a weekly one; gating the mark on the trade would leave the
+    # equity curve with a point only on rebalance days, which is not the daily
+    # curve every drawdown and rolling statistic downstream assumes.
     full_panel = history.price_panel(sorted(set(ledger.positions) | set(prices)))
     if not full_panel.empty:
         known = sorted(state.equity_curve)
@@ -767,6 +753,36 @@ def papertrade(
                 ledger.observe_prices(day_prices)
                 state.equity_curve[cursor] = ledger.equity(day_prices)
             cursor += timedelta(days=1)
+
+    ledger.observe_prices(prices)
+    marked = ledger.equity(prices)
+    state.equity_curve[execution_date] = marked
+
+    due = force or is_due(execution_date, state.last_rebalance, Cadence(portfolio.rebalance))
+    if not due:
+        if dry_run:
+            console.print(
+                f"No rebalance due: last was {state.last_rebalance}, cadence is "
+                f"{portfolio.rebalance}. Dry run: nothing written."
+            )
+            raise typer.Exit(code=0)
+        state.absorb(ledger)
+        store.save(state)
+        console.print(
+            f"No rebalance due (last was {state.last_rebalance}, cadence "
+            f"{portfolio.rebalance}); marked the book instead. Equity "
+            f"${marked:,.2f} on {execution_date}, {len(state.positions)} positions."
+        )
+        raise typer.Exit(code=0)
+
+    panel = load_price_panel(history, signal_snapshot["coin_id"].astype(str).tolist(), signal_date)
+    ranking = _rank_snapshot(
+        signal_snapshot,
+        as_of=signal_date,
+        config=config,
+        preset=preset,
+        price_panel=panel if not panel.empty else None,
+    )
 
     plan, executed = step_once(
         ledger,
