@@ -1,17 +1,17 @@
 # Paper trading record
 
-Generated 2026-09-11. Starting capital $1,000.00.
+Generated 2026-09-12. Starting capital $1,000.00.
 
-> **4 daily observations.** Under 30 days there is no meaningful distinction between edge and noise here; read the numbers below as a description of what happened, not as evidence of anything.
+> **5 daily observations.** Under 30 days there is no meaningful distinction between edge and noise here; read the numbers below as a description of what happened, not as evidence of anything.
 
 ## Performance
 
 | Series | Days | Total | Annualised | Vol | Sharpe | Sortino | Max DD | Calmar |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Paper trading record | 4 | -9.26% | -100.00% | 60.45% | -19.04 | -12.09 | -9.64% | -10.37 |
-| Buy and hold BTC | 4 | -1.02% | -71.44% | 8.05% | -15.52 | -11.00 | -1.02% | -69.72 |
-| Buy and hold ETH | 4 | -0.88% | -65.82% | 7.03% | -15.23 | -10.90 | -0.88% | -74.93 |
-| Equal-weight top 8 | 4 | -0.21% | -22.92% | 10.18% | -2.52 | -2.12 | -0.63% | -36.11 |
+| Paper trading record | 5 | -7.76% | -99.94% | 67.40% | -10.57 | -7.48 | -9.64% | -10.36 |
+| Buy and hold BTC | 5 | -3.21% | -94.90% | 18.99% | -15.54 | -11.33 | -3.21% | -29.57 |
+| Buy and hold ETH | 5 | -2.08% | -85.37% | 10.52% | -18.18 | -12.24 | -2.08% | -40.96 |
+| Equal-weight top 8 | 5 | -4.93% | -99.01% | 43.29% | -10.43 | -7.26 | -5.48% | -18.08 |
 
 
 ## Trading
@@ -25,7 +25,7 @@ Generated 2026-09-11. Starting capital $1,000.00.
 | Fees | $0.98 |
 | Slippage | $2.93 |
 | Total cost drag | $3.91 (0.39% of starting capital) |
-| BTC correlation (daily) | -0.90 |
+| BTC correlation (daily) | 0.38 |
 
 
 ## Return by entry rank
